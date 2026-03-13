@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  database:
+    build:
+      context: ./Database
+    image: invoice-app-db
+    container_name: postgres-db
+    environment:
+      POSTGRES_PASSWORD: your_strong_password
+      POSTGRES_DB: invoice_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./Database/data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./Backend
+    image: invoice-app-backend
+    container_name: backend
+    ports:
+      - "5001:5001"
+    environment:
+      - DB_HOST=database
+      - DB_NAME=invoice_db
+      - DB_USER=postgres
+      - DB_PASSWORD=your_strong_password
+      - FLASK_APP=app.py
+      - FLASK_RUN_HOST=0.0.0.0
+      - FLASK_DEBUG=1
+    depends_on:
+      - database
+    volumes:
+      - ./Backend:/app
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./Frontend
+    image: invoice-app-frontend
+    container_name: frontend
+    ports:
+      - "9002:9002"
+    depends_on:
+      - backend
+    volumes:
+      - ./Frontend:/app
+      - /app/node_modules
+      - /app/.next
+    restart: unless-stopped
