@@ -20,7 +20,7 @@ export const items: Item[] = [
 export let invoices: Invoice[] = [
   {
     id: "inv-1",
-    invoiceNumber: "INV0001",
+    invoiceNumber: "EST-0001",
     customer: customers[0],
     customerId: "1",
     issueDate: "2024-05-01",
@@ -39,7 +39,7 @@ export let invoices: Invoice[] = [
   },
   {
     id: "inv-2",
-    invoiceNumber: "INV0002",
+    invoiceNumber: "EST-0002",
     customer: customers[1],
     customerId: "2",
     issueDate: "2024-05-15",
@@ -65,7 +65,7 @@ export let invoices: Invoice[] = [
   },
   {
     id: "inv-3",
-    invoiceNumber: "INV0003",
+    invoiceNumber: "EST-0003",
     customer: customers[2],
     customerId: "3",
     issueDate: "2024-06-01",
@@ -84,7 +84,7 @@ export let invoices: Invoice[] = [
   },
     {
     id: "inv-4",
-    invoiceNumber: "INV0004",
+    invoiceNumber: "EST-0004",
     customer: customers[1],
     customerId: "2",
     issueDate: "2024-06-05",

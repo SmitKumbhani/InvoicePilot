@@ -1,4 +1,7 @@
 import os
+import re
+import time
+from threading import Lock
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import psycopg2
@@ -6,6 +9,11 @@ from decimal import Decimal, InvalidOperation
 
 app = Flask(__name__)
 CORS(app)
+
+invoice_number_migration_lock = Lock()
+invoice_number_migration_complete = False
+invoice_number_migration_last_attempt = 0.0
+MIGRATION_RETRY_INTERVAL_SECONDS = 30
 
 @app.before_request
 def log_request_info():
@@ -16,6 +24,99 @@ def log_request_info():
 def log_response_info(response):
     app.logger.info('Response: %s', response.get_data())
     return response
+
+
+def extract_trailing_number(value):
+    match = re.search(r'(\d+)$', value or "")
+    return int(match.group(1)) if match else None
+
+
+def migrate_invoice_number_prefixes(cur):
+    cur.execute("SELECT id, invoice_number FROM invoices ORDER BY created_at ASC, id ASC")
+    invoices = cur.fetchall()
+
+    used_est_numbers = set()
+    next_est_number = 1
+    updates = []
+
+    for invoice_id, invoice_number in invoices:
+        current_number = invoice_number or ""
+        normalized_number = current_number.upper()
+
+        if normalized_number.startswith("EST-"):
+            suffix = extract_trailing_number(current_number)
+            if suffix is not None and suffix > 0:
+                used_est_numbers.add(suffix)
+                next_est_number = max(next_est_number, suffix + 1)
+            continue
+
+        if not normalized_number.startswith("INV"):
+            continue
+
+        suffix = extract_trailing_number(current_number)
+        candidate = suffix if suffix is not None and suffix > 0 else next_est_number
+        while candidate in used_est_numbers:
+            candidate += 1
+
+        used_est_numbers.add(candidate)
+        next_est_number = max(next_est_number, candidate + 1)
+        new_number = f"EST-{candidate:04d}"
+
+        if new_number != current_number:
+            updates.append((new_number, str(invoice_id)))
+
+    if updates:
+        cur.executemany(
+            "UPDATE invoices SET invoice_number = %s, updated_at = NOW() WHERE id = %s",
+            updates
+        )
+
+    return len(updates)
+
+
+def ensure_invoice_number_migration():
+    global invoice_number_migration_complete, invoice_number_migration_last_attempt
+
+    if invoice_number_migration_complete:
+        return
+
+    now = time.monotonic()
+    if now - invoice_number_migration_last_attempt < MIGRATION_RETRY_INTERVAL_SECONDS:
+        return
+
+    with invoice_number_migration_lock:
+        if invoice_number_migration_complete:
+            return
+
+        now = time.monotonic()
+        if now - invoice_number_migration_last_attempt < MIGRATION_RETRY_INTERVAL_SECONDS:
+            return
+
+        invoice_number_migration_last_attempt = now
+        conn = None
+        cur = None
+
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            migrated_count = migrate_invoice_number_prefixes(cur)
+            conn.commit()
+            invoice_number_migration_complete = True
+            app.logger.info("Invoice number migration complete. Updated %s record(s).", migrated_count)
+        except Exception as migration_error:
+            if conn:
+                conn.rollback()
+            app.logger.error("Invoice number migration failed: %s", migration_error)
+        finally:
+            if cur:
+                cur.close()
+            if conn:
+                conn.close()
+
+
+@app.before_request
+def run_startup_migrations():
+    ensure_invoice_number_migration()
 
 
 # --- Database Connection ---
@@ -385,10 +486,10 @@ def generate_invoice_number(cur):
     cur.execute("SELECT invoice_number FROM invoices ORDER BY created_at DESC LIMIT 1")
     last_invoice = cur.fetchone()
     if last_invoice:
-        last_number = int(last_invoice[0].split('-')[1])
+        last_number = extract_trailing_number(last_invoice[0]) or 0
         new_number = last_number + 1
-        return f'INV-{new_number:04d}'
-    return 'INV-0001'
+        return f'EST-{new_number:04d}'
+    return 'EST-0001'
 
 @app.route('/api/invoices', methods=['POST'])
 def create_invoice():
