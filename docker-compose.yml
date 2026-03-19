@@ -42,8 +42,8 @@ services:
     image: invoice-app-frontend
     container_name: frontend
     environment:
-      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN:-}
-      - NGROK_DOMAIN=${NGROK_DOMAIN:-}
+      - NGROK_AUTHTOKEN=3B9TCLUNFAcrZ9NvmK5gRtZemmZ_6m7XSamN6XX5Er9Qakimf
+      - NGROK_DOMAIN=
       - NGROK_PORT=9002
     ports:
       - "9002:9002"
