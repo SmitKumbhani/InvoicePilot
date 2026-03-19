@@ -81,17 +81,17 @@ export function InvoiceDetails({ invoice, previousBalanceDue, onItemFocus, onInv
                         <span>{formatCurrency(invoice.total)}</span>
                     </div>
                     <div className="flex justify-between">
-                        <span className="text-muted-foreground">Paid for this invoice</span>
-                        <span>-{formatCurrency(invoice.amountPaid)}</span>
-                    </div>
-                     <div className="flex justify-between font-medium">
-                        <span>Amount Due for this invoice</span>
-                        <span>{formatCurrency(amountDue)}</span>
-                    </div>
-                    <Separator className="my-2"/>
-                    <div className="flex justify-between">
                         <span>Previous Due</span>
                         <span>{formatCurrency(previousBalanceDue)}</span>
+                    </div>
+
+                    <div className="flex justify-between">
+                        <span className="text-muted-foreground">Total Due</span>
+                        <span>{formatCurrency(amountDue)}</span>
+                    </div>
+                     <div className="flex justify-between font-medium">
+                        <span>Amount Paid</span>
+                        <span>-{formatCurrency(invoice.amountPaid)}</span>
                     </div>
                     <Separator className="my-2"/>
                     <div className="flex justify-between font-bold text-xl text-primary">
