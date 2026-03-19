@@ -28,8 +28,8 @@ const statusVariant: { [key in Invoice["status"]]: string } = {
 
 export function InvoiceDetails({ invoice, previousBalanceDue, onItemFocus, onInvoiceUpdated }: InvoiceDetailsProps) {
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
-  const amountDue = Math.max(invoice.total - invoice.amountPaid, 0);
-  const grandTotalDue = amountDue + previousBalanceDue;
+  const totalDue = invoice.total + previousBalanceDue;
+  const grandTotalDue = totalDue - invoice.amountPaid;
 
   return (
     <>
@@ -87,11 +87,11 @@ export function InvoiceDetails({ invoice, previousBalanceDue, onItemFocus, onInv
 
                     <div className="flex justify-between">
                         <span className="text-muted-foreground">Total Due</span>
-                        <span>{formatCurrency(amountDue)}</span>
+                        <span>{formatCurrency(totalDue)}</span>
                     </div>
                      <div className="flex justify-between font-medium">
                         <span>Amount Paid</span>
-                        <span>-{formatCurrency(invoice.amountPaid)}</span>
+                        <span>{formatCurrency(invoice.amountPaid)}</span>
                     </div>
                     <Separator className="my-2"/>
                     <div className="flex justify-between font-bold text-xl text-primary">
@@ -103,7 +103,7 @@ export function InvoiceDetails({ invoice, previousBalanceDue, onItemFocus, onInv
         </CardContent>
         <CardFooter className="justify-end no-print">
             <Button onClick={() => setIsPaymentDialogOpen(true)}>
-              {amountDue > 0 ? "Record / Adjust Payment" : "Adjust Payment"}
+              {grandTotalDue > 0 ? "Record / Adjust Payment" : "Adjust Payment"}
             </Button>
         </CardFooter>
       </Card>
