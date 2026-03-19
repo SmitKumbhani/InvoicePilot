@@ -16,6 +16,7 @@ type InvoiceDetailsProps = {
   invoice: Invoice;
   previousBalanceDue: number;
   onItemFocus?: (itemId: string | null) => void;
+  onInvoiceUpdated?: (invoice: Invoice) => void;
 };
 
 const statusVariant: { [key in Invoice["status"]]: string } = {
@@ -25,25 +26,10 @@ const statusVariant: { [key in Invoice["status"]]: string } = {
   draft: "bg-gray-100 text-gray-800 dark:bg-gray-900/50 dark:text-gray-300",
 };
 
-export function InvoiceDetails({ invoice: initialInvoice, previousBalanceDue, onItemFocus }: InvoiceDetailsProps) {
+export function InvoiceDetails({ invoice, previousBalanceDue, onItemFocus, onInvoiceUpdated }: InvoiceDetailsProps) {
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
-  // This local state will be updated when the dialog closes after a successful payment.
-  const [invoice, setInvoice] = useState(initialInvoice);
-
-  const amountDue = invoice.total - invoice.amountPaid;
+  const amountDue = Math.max(invoice.total - invoice.amountPaid, 0);
   const grandTotalDue = amountDue + previousBalanceDue;
-
-  const handlePaymentSuccess = () => {
-    // A simple way to refresh data without a full page reload is to just update local state
-    // For a more robust solution, you might refetch or use a state management library
-    const updatedInvoice = {
-      ...invoice,
-      // This is an optimistic update. The server has the real data.
-      // We can't know the exact new amountPaid without a refetch, but we can close the loop.
-    };
-    // To properly update, we'd need the action to return the updated invoice.
-    // For now, we'll just close the dialog. The revalidation on the server action will update the page on next navigation.
-  };
 
   return (
     <>
@@ -56,11 +42,12 @@ export function InvoiceDetails({ invoice: initialInvoice, previousBalanceDue, on
                 </CardDescription>
             </div>
             <div className="text-right space-y-1">
-                 <Badge variant={"outline"} className={cn("text-base border-transparent", statusVariant[invoice.status])}>
+                <Badge variant={"outline"} className={cn("text-base border-transparent", statusVariant[invoice.status])}>
                     {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1).replace("-", " ")}
                 </Badge>
-                {/* <p className="text-sm text-muted-foreground">Issued: {format(new Date(new Date(invoice.issueDate).toUTCString()), "MMM d, yyyy")}</p> */}
-                <p className="text-sm text-muted-foreground">Issued: {invoice.created_at}</p>
+                <p className="text-sm text-muted-foreground">
+                  Issued: {invoice.issueDate ? format(new Date(new Date(invoice.issueDate).toUTCString()), "MMM d, yyyy") : ""}
+                </p>
             </div>
         </CardHeader>
         <CardContent>
@@ -75,8 +62,8 @@ export function InvoiceDetails({ invoice: initialInvoice, previousBalanceDue, on
                     </TableRow>
                 </TableHeader>
                 <TableBody>
-                    {invoice.lineItems && invoice.lineItems.map((item, index) => (
-                        <TableRow key={index} onFocus={() => onItemFocus?.(item.itemId)} onClick={() => onItemFocus?.(item.itemId)} className="cursor-pointer">
+                    {invoice.lineItems.map((item, index) => (
+                        <TableRow key={item.id ?? index} onFocus={() => onItemFocus?.(item.itemId ?? null)} onClick={() => onItemFocus?.(item.itemId ?? null)} className="cursor-pointer">
                             <TableCell>{item.group_name || 'N/A'}</TableCell>
                             <TableCell className="font-medium">{item.description}</TableCell>
                             <TableCell className="text-center">{item.quantity}</TableCell>
@@ -115,17 +102,17 @@ export function InvoiceDetails({ invoice: initialInvoice, previousBalanceDue, on
             </div>
         </CardContent>
         <CardFooter className="justify-end no-print">
-            {invoice.status !== 'paid' && (
-                 <Button onClick={() => setIsPaymentDialogOpen(true)}>Record Payment</Button>
-            )}
+            <Button onClick={() => setIsPaymentDialogOpen(true)}>
+              {amountDue > 0 ? "Record / Adjust Payment" : "Adjust Payment"}
+            </Button>
         </CardFooter>
       </Card>
       <PaymentDialog
         invoice={invoice}
         open={isPaymentDialogOpen}
-        onOpenChange={(open) => {
-            setIsPaymentDialogOpen(open)
-            if (!open) handlePaymentSuccess();
+        onOpenChange={setIsPaymentDialogOpen}
+        onPaymentRecorded={(updatedInvoice) => {
+          onInvoiceUpdated?.(updatedInvoice);
         }}
       />
     </>

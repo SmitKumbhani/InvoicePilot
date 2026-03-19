@@ -70,8 +70,8 @@ export function PriceHistoryPanel({ itemId, customerId }: { itemId: string | nul
                 <TableBody>
                     {history.map((entry, index) => (
                         <TableRow key={index}>
-                            <TableCell>{format(new Date(new Date(entry.issue_date).toUTCString()), "MMM d, yyyy")}</TableCell>
-                            <TableCell className="text-right">{formatCurrency(entry.unit_price)}</TableCell>
+                            <TableCell>{format(new Date(new Date(entry.issueDate).toUTCString()), "MMM d, yyyy")}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(entry.unitPrice)}</TableCell>
                         </TableRow>
                     ))}
                 </TableBody>

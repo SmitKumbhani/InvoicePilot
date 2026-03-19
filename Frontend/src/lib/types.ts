@@ -12,12 +12,16 @@ export type Item = {
 };
 
 export type LineItem = {
-  itemId: string;
+  id?: string;
+  itemId?: string | null;
   group_name?: string;
   description: string;
   quantity: number;
   unitPrice: number;
+  itemName?: string;
 };
+
+export type InvoiceStatus = "paid" | "pending" | "draft" | "partially-paid";
 
 export type Invoice = {
   id: string;
@@ -25,16 +29,23 @@ export type Invoice = {
   customer: Customer;
   customerId: string;
   issueDate: string | Date;
-  status: "paid" | "pending" | "draft" | "partially-paid";
+  status: InvoiceStatus;
   lineItems: LineItem[];
   total: number;
   amountPaid: number;
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
 };
 
 export type PriceHistoryEntry = {
-  itemId: string;
-  itemName: string;
-  price: number;
-  date: string;
+  unitPrice: number;
+  issueDate: string | Date;
+  itemName?: string;
+};
+
+export type InvoiceUpsertInput = {
   customerId: string;
+  issueDate: string;
+  lineItems: LineItem[];
+  status?: InvoiceStatus;
 };

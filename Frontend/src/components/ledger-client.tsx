@@ -249,7 +249,7 @@ function InvoiceCardList({ invoices, onCardClick, onPrintClick, onDeleteClick, i
               </div>
               <div className="flex justify-between font-semibold">
                 <span className="text-foreground">Amount Due</span>
-                <span>{formatCurrency(invoice.total - invoice.amountPaid)}</span>
+                <span>{formatCurrency(Math.max(invoice.total - invoice.amountPaid, 0))}</span>
               </div>
           </CardContent>
           <CardFooter className="flex justify-end">
@@ -319,7 +319,7 @@ function InvoiceTable({ invoices, onRowClick, onPrintClick, onDeleteClick, isDel
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right">
-                  {formatCurrency(invoice.total - invoice.amountPaid)}
+                  {formatCurrency(Math.max(invoice.total - invoice.amountPaid, 0))}
                 </TableCell>
                 <TableCell className="text-right hidden md:table-cell">
                   {formatCurrency(invoice.total)}

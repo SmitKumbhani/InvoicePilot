@@ -2,17 +2,29 @@
 'use client';
 
 import { useState } from "react";
-import type { Invoice } from "@/lib/types";
+import type { Customer, Invoice, Item } from "@/lib/types";
 import { InvoiceDetails } from "@/components/invoice-details";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Printer } from "lucide-react";
+import { ArrowLeft, Pencil, Printer } from "lucide-react";
 import { PriceHistoryPanel } from "@/components/price-history-panel";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { InvoiceEditDialog } from "./invoice-edit-dialog";
 
-export function InvoicePageClient({ invoice: initialInvoice, previousBalanceDue }: { invoice: Invoice, previousBalanceDue: number }) {
+export function InvoicePageClient({
+  invoice: initialInvoice,
+  previousBalanceDue,
+  customers,
+  items,
+}: {
+  invoice: Invoice;
+  previousBalanceDue: number;
+  customers: Customer[];
+  items: Item[];
+}) {
   const [invoice, setInvoice] = useState(initialInvoice);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const isMobile = useIsMobile();
 
   const handlePrint = () => {
@@ -39,14 +51,25 @@ export function InvoicePageClient({ invoice: initialInvoice, previousBalanceDue 
                       </p>
                   </div>
               </div>
-              <Button onClick={handlePrint}>
-                <Printer />
-                Print Invoice
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" onClick={() => setIsEditDialogOpen(true)} className="no-print">
+                  <Pencil />
+                  Edit Invoice
+                </Button>
+                <Button onClick={handlePrint}>
+                  <Printer />
+                  Print Invoice
+                </Button>
+              </div>
           </div>
         <div className="grid lg:grid-cols-5 gap-8">
             <div className="lg:col-span-3">
-                <InvoiceDetails invoice={invoice} previousBalanceDue={previousBalanceDue} onItemFocus={setSelectedItemId} />
+                <InvoiceDetails
+                  invoice={invoice}
+                  previousBalanceDue={previousBalanceDue}
+                  onItemFocus={setSelectedItemId}
+                  onInvoiceUpdated={setInvoice}
+                />
             </div>
             {!isMobile && (
                 <div className="lg:col-span-2 no-print">
@@ -55,6 +78,14 @@ export function InvoicePageClient({ invoice: initialInvoice, previousBalanceDue 
             )}
         </div>
       </div>
+      <InvoiceEditDialog
+        open={isEditDialogOpen}
+        onOpenChange={setIsEditDialogOpen}
+        invoice={invoice}
+        customers={customers}
+        items={items}
+        onInvoiceUpdated={setInvoice}
+      />
     </>
   );
 }

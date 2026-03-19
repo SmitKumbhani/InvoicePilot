@@ -1,12 +1,12 @@
 "use client"
 import { useLoader } from "@/hooks/use-loader";
 import * as serverActions from "./actions";
-import type { Invoice, Customer, Item, PriceHistoryEntry } from "./types";
+import type { Invoice, InvoiceUpsertInput } from "./types";
 
 export const useApi = () => {
   const { showLoader, hideLoader } = useLoader();
 
-  const getInvoices = async (status?: "all" | "paid" | "pending" | "partially-paid") => {
+  const getInvoices = async (status?: "all" | Invoice["status"]) => {
     showLoader();
     try {
       return await serverActions.getInvoices(status);
@@ -51,10 +51,19 @@ export const useApi = () => {
     }
   };
 
-  const createInvoice = async (invoiceData: Omit<Invoice, "id" | "invoiceNumber" | "customer" | "amountPaid">) => {
+  const createInvoice = async (invoiceData: InvoiceUpsertInput) => {
     showLoader();
     try {
       return await serverActions.createInvoice(invoiceData);
+    } finally {
+      hideLoader();
+    }
+  };
+
+  const updateInvoice = async (invoiceId: string, invoiceData: InvoiceUpsertInput) => {
+    showLoader();
+    try {
+      return await serverActions.updateInvoice(invoiceId, invoiceData);
     } finally {
       hideLoader();
     }
@@ -64,6 +73,15 @@ export const useApi = () => {
     showLoader();
     try {
       return await serverActions.updateInvoicePayment(invoiceId, paymentAmount);
+    } finally {
+      hideLoader();
+    }
+  };
+
+  const setInvoicePaidAmount = async (invoiceId: string, amountPaid: number) => {
+    showLoader();
+    try {
+      return await serverActions.setInvoicePaidAmount(invoiceId, amountPaid);
     } finally {
       hideLoader();
     }
@@ -140,7 +158,9 @@ export const useApi = () => {
     getItems,
     getItemPriceHistory,
     createInvoice,
+    updateInvoice,
     updateInvoicePayment,
+    setInvoicePaidAmount,
     createItem,
     updateItem,
     createCustomer,

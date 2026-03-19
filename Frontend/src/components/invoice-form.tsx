@@ -99,10 +99,10 @@ export function InvoiceForm({ customers, items, onItemFocus, onCustomerChange }:
     showLoader();
     try {
       const newInvoiceData = {
-        ...data,
+        customerId: data.customerId,
         issueDate: data.issueDate.toUTCString(),
+        lineItems: data.lineItems,
         status: "pending" as const,
-        total,
       };
       await createInvoice(newInvoiceData);
       toast({

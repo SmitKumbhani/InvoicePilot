@@ -17,8 +17,14 @@ Here is the list of all the backend functions required to power the app's curren
 *   **`createInvoice(invoiceData)`**: Creates a new invoice.
     *   **REST Equivalent**: `POST /api/invoices`
 
+*   **`updateInvoice(invoiceId, invoiceData)`**: Updates an existing invoice (customer/date/items/prices) and recalculates totals.
+    *   **REST Equivalent**: `PUT /api/invoices/{id}`
+
 *   **`updateInvoicePayment(invoiceId, paymentAmount)`**: Records a payment against an invoice and updates its status.
     *   **REST Equivalent**: `PATCH /api/invoices/{id}/payment`
+
+*   **`setInvoicePaidAmount(invoiceId, amountPaid)`**: Corrects the invoice's total paid amount (useful if payment was entered incorrectly, including fully paid invoices).
+    *   **REST Equivalent**: `PATCH /api/invoices/{id}/payment` with `{ amountPaid }`
 
 *   **`deleteInvoice(invoiceId)`**: Deletes an invoice.
     *   **REST Equivalent**: `DELETE /api/invoices/{id}`

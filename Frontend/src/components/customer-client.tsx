@@ -69,7 +69,7 @@ function InvoiceSubTable({ invoices }: { invoices: Invoice[] }) {
                                 {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1).replace('-', ' ')}
                             </Badge>
                         </TableCell>
-                        <TableCell className="text-right">{formatCurrency(invoice.total - invoice.amountPaid)}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(Math.max(invoice.total - invoice.amountPaid, 0))}</TableCell>
                     </TableRow>
                 ))}
             </TableBody>

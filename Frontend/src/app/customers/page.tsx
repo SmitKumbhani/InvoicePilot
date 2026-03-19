@@ -33,7 +33,7 @@ export default function CustomersPage() {
 
             const customerData = customerList.map(customer => {
                 const customerInvoices = invoiceList.filter(inv => inv.customerId === customer.id && inv.status !== 'paid');
-                const pendingAmount = customerInvoices.reduce((acc, inv) => acc + (inv.total - inv.amountPaid), 0);
+                const pendingAmount = customerInvoices.reduce((acc, inv) => acc + Math.max(inv.total - inv.amountPaid, 0), 0);
                 return {
                     ...customer,
                     pendingAmount,
