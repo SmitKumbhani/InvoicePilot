@@ -33,6 +33,27 @@ CREATE TABLE invoices (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Table for customer-level payments.
+CREATE TABLE customer_payments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    amount NUMERIC(10, 2) NOT NULL CHECK (amount > 0),
+    payment_date DATE NOT NULL,
+    note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Table for mapping customer payments to invoices.
+CREATE TABLE payment_allocations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    payment_id UUID NOT NULL REFERENCES customer_payments(id) ON DELETE CASCADE,
+    invoice_id UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    allocated_amount NUMERIC(10, 2) NOT NULL CHECK (allocated_amount > 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (payment_id, invoice_id)
+);
+
 -- Table for individual line items on an invoice.
 -- This is a "join table" between invoices and items.
 CREATE TABLE line_items (
@@ -48,6 +69,10 @@ CREATE TABLE line_items (
 -- Indexes to speed up common queries.
 CREATE INDEX idx_invoices_customer_id ON invoices(customer_id);
 CREATE INDEX idx_invoices_status ON invoices(status);
+CREATE INDEX idx_customer_payments_customer_id ON customer_payments(customer_id);
+CREATE INDEX idx_customer_payments_customer_id_payment_date ON customer_payments(customer_id, payment_date, created_at);
+CREATE INDEX idx_payment_allocations_payment_id ON payment_allocations(payment_id);
+CREATE INDEX idx_payment_allocations_invoice_id ON payment_allocations(invoice_id);
 CREATE INDEX idx_line_items_invoice_id ON line_items(invoice_id);
 CREATE INDEX idx_line_items_item_id ON line_items(item_id);
 
@@ -73,5 +98,10 @@ EXECUTE PROCEDURE trigger_set_timestamp();
 
 CREATE TRIGGER set_timestamp_invoices
 BEFORE UPDATE ON invoices
+FOR EACH ROW
+EXECUTE PROCEDURE trigger_set_timestamp();
+
+CREATE TRIGGER set_timestamp_customer_payments
+BEFORE UPDATE ON customer_payments
 FOR EACH ROW
 EXECUTE PROCEDURE trigger_set_timestamp();

@@ -1,7 +1,14 @@
 "use client"
 import { useLoader } from "@/hooks/use-loader";
 import * as serverActions from "./actions";
-import type { Invoice, InvoiceUpsertInput } from "./types";
+import type {
+  Invoice,
+  InvoiceUpsertInput,
+  CustomerPayment,
+  CustomerPaymentsResponse,
+  CreateCustomerPaymentInput,
+  UpdateCustomerPaymentInput,
+} from "./types";
 
 export const useApi = () => {
   const { showLoader, hideLoader } = useLoader();
@@ -69,19 +76,47 @@ export const useApi = () => {
     }
   };
 
-  const updateInvoicePayment = async (invoiceId: string, paymentAmount: number) => {
+  const createCustomerPayment = async (
+    customerId: string,
+    paymentData: CreateCustomerPaymentInput
+  ): Promise<CustomerPayment> => {
     showLoader();
     try {
-      return await serverActions.updateInvoicePayment(invoiceId, paymentAmount);
+      return await serverActions.createCustomerPayment(customerId, paymentData);
     } finally {
       hideLoader();
     }
   };
 
-  const setInvoicePaidAmount = async (invoiceId: string, amountPaid: number) => {
+  const getCustomerPayments = async (customerId: string): Promise<CustomerPaymentsResponse> => {
     showLoader();
     try {
-      return await serverActions.setInvoicePaidAmount(invoiceId, amountPaid);
+      return await serverActions.getCustomerPayments(customerId);
+    } finally {
+      hideLoader();
+    }
+  };
+
+  const updateCustomerPayment = async (
+    customerId: string,
+    paymentId: string,
+    paymentData: UpdateCustomerPaymentInput
+  ): Promise<CustomerPayment> => {
+    showLoader();
+    try {
+      return await serverActions.updateCustomerPayment(customerId, paymentId, paymentData);
+    } finally {
+      hideLoader();
+    }
+  };
+
+  const deleteCustomerPayment = async (
+    customerId: string,
+    paymentId: string
+  ): Promise<{ success: true }> => {
+    showLoader();
+    try {
+      return await serverActions.deleteCustomerPayment(customerId, paymentId);
     } finally {
       hideLoader();
     }
@@ -159,8 +194,10 @@ export const useApi = () => {
     getItemPriceHistory,
     createInvoice,
     updateInvoice,
-    updateInvoicePayment,
-    setInvoicePaidAmount,
+    createCustomerPayment,
+    getCustomerPayments,
+    updateCustomerPayment,
+    deleteCustomerPayment,
     createItem,
     updateItem,
     createCustomer,

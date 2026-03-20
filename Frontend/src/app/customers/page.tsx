@@ -3,7 +3,7 @@
 import { useApi } from "@/lib/api";
 import { CustomerClient } from "@/components/customer-client";
 import { useEffect, useState, useMemo } from "react";
-import { Customer } from "@/lib/types";
+import { Customer, Invoice } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { PlusCircle, Search } from "lucide-react";
 import { CustomerDialog } from "@/components/customer-dialog";
@@ -11,7 +11,8 @@ import { Input } from "@/components/ui/input";
 
 type CustomerWithPending = Customer & {
   pendingAmount: number;
-  invoices: any[];
+  customerCredit: number;
+  invoices: Invoice[];
 };
 
 
@@ -21,7 +22,7 @@ export default function CustomersPage() {
     const [isCustomerDialogOpen, setIsCustomerDialogOpen] = useState(false);
     const [refreshCount, setRefreshCount] = useState(0);
     const [searchTerm, setSearchTerm] = useState("");
-    const { getCustomers, getInvoices } = useApi();
+    const { getCustomers, getInvoices, getCustomerPayments } = useApi();
 
     useEffect(() => {
         async function fetchData() {
@@ -31,12 +32,41 @@ export default function CustomersPage() {
                 getInvoices()
             ]);
 
+            const customerCredits = await Promise.all(
+                customerList.map(async (customer) => {
+                    try {
+                        const payments = await getCustomerPayments(customer.id);
+                        const creditValue =
+                            payments.summary?.customerCredit ??
+                            payments.summary?.availableCredit ??
+                            payments.summary?.creditBalance ??
+                            payments.summary?.totalUnallocated ??
+                            0;
+
+                        return {
+                            customerId: customer.id,
+                            customerCredit: Math.max(Number(creditValue) || 0, 0),
+                        };
+                    } catch {
+                        return {
+                            customerId: customer.id,
+                            customerCredit: 0,
+                        };
+                    }
+                })
+            );
+
+            const customerCreditMap = new Map(
+                customerCredits.map((entry) => [entry.customerId, entry.customerCredit])
+            );
+
             const customerData = customerList.map(customer => {
                 const customerInvoices = invoiceList.filter(inv => inv.customerId === customer.id && inv.status !== 'paid');
                 const pendingAmount = customerInvoices.reduce((acc, inv) => acc + Math.max(inv.total - inv.amountPaid, 0), 0);
                 return {
                     ...customer,
                     pendingAmount,
+                    customerCredit: customerCreditMap.get(customer.id) ?? 0,
                     invoices: customerInvoices
                 }
             });

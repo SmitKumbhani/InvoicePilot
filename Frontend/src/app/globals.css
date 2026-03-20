@@ -88,6 +88,11 @@ body {
 }
 
 @media print {
+  @page {
+    size: A4 landscape;
+    margin: 6mm;
+  }
+
   body * {
     visibility: hidden;
   }
@@ -110,5 +115,73 @@ body {
   #invoice-details {
     border: none;
     box-shadow: none;
+  }
+
+  .customer-ledger-dialog-content {
+    position: static !important;
+    inset: 0 !important;
+    transform: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  .customer-ledger-dialog-content > button {
+    display: none !important;
+  }
+
+  .customer-ledger-print {
+    width: 100% !important;
+    max-width: 100% !important;
+    color: #000 !important;
+  }
+
+  .customer-ledger-print .customer-ledger-header {
+    padding: 4px 6px 6px 6px !important;
+    border-bottom: 1px solid #d1d5db !important;
+  }
+
+  .customer-ledger-print .customer-ledger-summary {
+    padding: 4px 6px !important;
+    gap: 6px !important;
+    font-size: 11px !important;
+  }
+
+  .customer-ledger-print .customer-ledger-body {
+    padding: 4px 6px !important;
+  }
+
+  .customer-ledger-print .customer-ledger-table-wrap > div {
+    overflow: visible !important;
+  }
+
+  .customer-ledger-print .customer-ledger-print-table {
+    table-layout: fixed !important;
+    width: 100% !important;
+    font-size: 9.5px !important;
+    line-height: 1.15 !important;
+  }
+
+  .customer-ledger-print .customer-ledger-print-table th,
+  .customer-ledger-print .customer-ledger-print-table td {
+    padding: 2px 4px !important;
+    white-space: nowrap !important;
+  }
+
+  .customer-ledger-print .customer-ledger-print-table th {
+    height: auto !important;
+  }
+
+  .customer-ledger-print .customer-ledger-print-table .font-mono {
+    font-size: 9px !important;
+  }
+
+  .customer-ledger-print .customer-ledger-print-table tr {
+    break-inside: avoid;
   }
 }

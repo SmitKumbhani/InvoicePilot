@@ -1,6 +1,7 @@
 import os
 import re
 import time
+from datetime import date
 from threading import Lock
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -14,6 +15,8 @@ invoice_number_migration_lock = Lock()
 invoice_number_migration_complete = False
 invoice_number_migration_last_attempt = 0.0
 MIGRATION_RETRY_INTERVAL_SECONDS = 30
+payment_schema_migration_complete = False
+payment_schema_migration_last_attempt = 0.0
 
 @app.before_request
 def log_request_info():
@@ -114,8 +117,92 @@ def ensure_invoice_number_migration():
                 conn.close()
 
 
+def ensure_customer_payment_schema():
+    global payment_schema_migration_complete, payment_schema_migration_last_attempt
+
+    if payment_schema_migration_complete:
+        return
+
+    now = time.monotonic()
+    if now - payment_schema_migration_last_attempt < MIGRATION_RETRY_INTERVAL_SECONDS:
+        return
+
+    with invoice_number_migration_lock:
+        if payment_schema_migration_complete:
+            return
+
+        now = time.monotonic()
+        if now - payment_schema_migration_last_attempt < MIGRATION_RETRY_INTERVAL_SECONDS:
+            return
+
+        payment_schema_migration_last_attempt = now
+        conn = None
+        cur = None
+
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+
+            cur.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS customer_payments (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+                    amount NUMERIC(10, 2) NOT NULL CHECK (amount > 0),
+                    payment_date DATE NOT NULL,
+                    note TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+                '''
+            )
+            cur.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS payment_allocations (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    payment_id UUID NOT NULL REFERENCES customer_payments(id) ON DELETE CASCADE,
+                    invoice_id UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+                    allocated_amount NUMERIC(10, 2) NOT NULL CHECK (allocated_amount > 0),
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    UNIQUE (payment_id, invoice_id)
+                );
+                '''
+            )
+
+            cur.execute('CREATE INDEX IF NOT EXISTS idx_customer_payments_customer_id ON customer_payments(customer_id);')
+            cur.execute('CREATE INDEX IF NOT EXISTS idx_customer_payments_customer_id_payment_date ON customer_payments(customer_id, payment_date, created_at);')
+            cur.execute('CREATE INDEX IF NOT EXISTS idx_payment_allocations_payment_id ON payment_allocations(payment_id);')
+            cur.execute('CREATE INDEX IF NOT EXISTS idx_payment_allocations_invoice_id ON payment_allocations(invoice_id);')
+
+            cur.execute("SELECT 1 FROM pg_trigger WHERE tgname = 'set_timestamp_customer_payments';")
+            has_trigger = cur.fetchone() is not None
+            if not has_trigger:
+                cur.execute(
+                    '''
+                    CREATE TRIGGER set_timestamp_customer_payments
+                    BEFORE UPDATE ON customer_payments
+                    FOR EACH ROW
+                    EXECUTE PROCEDURE trigger_set_timestamp();
+                    '''
+                )
+
+            conn.commit()
+            payment_schema_migration_complete = True
+            app.logger.info("Customer payment schema migration complete.")
+        except Exception as migration_error:
+            if conn:
+                conn.rollback()
+            app.logger.error("Customer payment schema migration failed: %s", migration_error)
+        finally:
+            if cur:
+                cur.close()
+            if conn:
+                conn.close()
+
+
 @app.before_request
 def run_startup_migrations():
+    ensure_customer_payment_schema()
     ensure_invoice_number_migration()
 
 
@@ -339,6 +426,329 @@ def determine_invoice_status(total, amount_paid, unpaid_status='pending'):
 def calculate_invoice_total(line_items):
     return sum((item['quantity'] * item['unitPrice'] for item in line_items), Decimal('0'))
 
+def parse_decimal_amount(value, field_name):
+    try:
+        amount = Decimal(str(value))
+    except (TypeError, ValueError, InvalidOperation):
+        return None, f'{field_name} must be a valid number'
+
+    try:
+        if amount <= Decimal('0'):
+            return None, f'{field_name} must be greater than 0'
+    except InvalidOperation:
+        return None, f'{field_name} must be a valid number'
+
+    if not amount.is_finite():
+        return None, f'{field_name} must be a valid number'
+
+    return amount, None
+
+def get_table_columns(cur, table_name):
+    cur.execute(
+        '''
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = %s;
+        ''',
+        (table_name,)
+    )
+    return {row[0] for row in cur.fetchall()}
+
+def pick_column(columns, candidates):
+    for candidate in candidates:
+        if candidate in columns:
+            return candidate
+    return None
+
+def fetchone_as_dict(cur):
+    row = cur.fetchone()
+    if not row:
+        return None
+    return {desc[0]: row[idx] for idx, desc in enumerate(cur.description)}
+
+def fetchall_as_dicts(cur):
+    rows = cur.fetchall()
+    columns = [desc[0] for desc in cur.description]
+    return [{col: row[idx] for idx, col in enumerate(columns)} for row in rows]
+
+def decimal_or_zero(value):
+    if value is None:
+        return Decimal('0')
+    if isinstance(value, Decimal):
+        return value
+    return Decimal(str(value))
+
+def ensure_customer_exists(cur, customer_id):
+    cur.execute('SELECT id FROM customers WHERE id = %s;', (str(customer_id),))
+    return cur.fetchone() is not None
+
+def resolve_payment_schema(cur):
+    customer_payment_columns = get_table_columns(cur, 'customer_payments')
+    payment_allocation_columns = get_table_columns(cur, 'payment_allocations')
+
+    if not customer_payment_columns:
+        return None, 'customer_payments table is not available'
+    if not payment_allocation_columns:
+        return None, 'payment_allocations table is not available'
+
+    payment_amount_col = pick_column(customer_payment_columns, ['amount', 'payment_amount'])
+    payment_date_col = pick_column(customer_payment_columns, ['payment_date', 'paymentDate', 'paymentdate', 'date'])
+    payment_note_col = pick_column(customer_payment_columns, ['note', 'notes', 'remark', 'remarks', 'description'])
+    payment_created_col = pick_column(customer_payment_columns, ['created_at', payment_date_col])
+    payment_updated_col = pick_column(customer_payment_columns, ['updated_at'])
+    allocation_payment_fk_col = pick_column(payment_allocation_columns, ['payment_id', 'customer_payment_id'])
+    allocation_amount_col = pick_column(payment_allocation_columns, ['allocated_amount', 'amount_allocated', 'amount'])
+    allocation_created_col = pick_column(payment_allocation_columns, ['created_at'])
+
+    if (
+        not payment_amount_col
+        or not payment_date_col
+        or 'customer_id' not in customer_payment_columns
+    ):
+        return None, 'customer_payments schema is missing required columns'
+
+    if (
+        not allocation_payment_fk_col
+        or not allocation_amount_col
+        or 'invoice_id' not in payment_allocation_columns
+    ):
+        return None, 'payment_allocations schema is missing required columns'
+
+    return {
+        'payment_amount_col': payment_amount_col,
+        'payment_date_col': payment_date_col,
+        'payment_note_col': payment_note_col,
+        'payment_created_col': payment_created_col,
+        'payment_updated_col': payment_updated_col,
+        'allocation_payment_fk_col': allocation_payment_fk_col,
+        'allocation_amount_col': allocation_amount_col,
+        'allocation_created_col': allocation_created_col
+    }, None
+
+def recompute_customer_allocations(cur, customer_id, schema):
+    payment_amount_col = schema['payment_amount_col']
+    payment_date_col = schema['payment_date_col']
+    payment_created_col = schema['payment_created_col']
+    allocation_payment_fk_col = schema['allocation_payment_fk_col']
+    allocation_amount_col = schema['allocation_amount_col']
+
+    payment_created_order = f', {payment_created_col} ASC' if payment_created_col else ''
+    cur.execute(
+        f'''
+        SELECT id, {payment_amount_col} AS payment_amount
+        FROM customer_payments
+        WHERE customer_id = %s
+        ORDER BY {payment_date_col} ASC{payment_created_order}, id ASC
+        FOR UPDATE;
+        ''',
+        (str(customer_id),)
+    )
+    payments = fetchall_as_dicts(cur)
+
+    cur.execute(
+        '''
+        SELECT id, total, status
+        FROM invoices
+        WHERE customer_id = %s
+        ORDER BY issue_date ASC, created_at ASC, id ASC
+        FOR UPDATE;
+        ''',
+        (str(customer_id),)
+    )
+    invoices = fetchall_as_dicts(cur)
+
+    cur.execute(
+        f'''
+        DELETE FROM payment_allocations pa
+        USING customer_payments cp
+        WHERE pa.{allocation_payment_fk_col} = cp.id
+          AND cp.customer_id = %s;
+        ''',
+        (str(customer_id),)
+    )
+
+    invoice_states = []
+    for invoice in invoices:
+        invoice_states.append({
+            'id': invoice['id'],
+            'total': decimal_or_zero(invoice['total']),
+            'amount_paid': Decimal('0'),
+            'unpaid_status': 'draft' if invoice['status'] == 'draft' else 'pending'
+        })
+
+    payment_allocated_totals = {}
+    payment_unallocated_totals = {}
+    invoice_idx = 0
+
+    for payment in payments:
+        payment_id = payment['id']
+        remaining_amount = decimal_or_zero(payment['payment_amount'])
+        payment_allocated_totals[payment_id] = Decimal('0')
+
+        while remaining_amount > Decimal('0') and invoice_idx < len(invoice_states):
+            invoice_state = invoice_states[invoice_idx]
+            amount_due = invoice_state['total'] - invoice_state['amount_paid']
+            if amount_due <= Decimal('0'):
+                invoice_idx += 1
+                continue
+
+            allocated_amount = min(remaining_amount, amount_due)
+            cur.execute(
+                f'''
+                INSERT INTO payment_allocations ({allocation_payment_fk_col}, invoice_id, {allocation_amount_col})
+                VALUES (%s, %s, %s);
+                ''',
+                (payment_id, invoice_state['id'], allocated_amount)
+            )
+
+            invoice_state['amount_paid'] += allocated_amount
+            payment_allocated_totals[payment_id] += allocated_amount
+            remaining_amount -= allocated_amount
+
+            if invoice_state['amount_paid'] >= invoice_state['total']:
+                invoice_idx += 1
+
+        payment_unallocated_totals[payment_id] = remaining_amount
+
+    updated_invoices = []
+    for invoice_state in invoice_states:
+        new_status = determine_invoice_status(
+            invoice_state['total'],
+            invoice_state['amount_paid'],
+            invoice_state['unpaid_status']
+        )
+        cur.execute(
+            'UPDATE invoices SET amount_paid = %s, status = %s, updated_at = NOW() WHERE id = %s;',
+            (invoice_state['amount_paid'], new_status, invoice_state['id'])
+        )
+        updated_invoices.append({
+            "id": invoice_state['id'],
+            "status": new_status,
+            "amountPaid": invoice_state['amount_paid'],
+            "amount_paid": invoice_state['amount_paid']
+        })
+
+    total_unallocated_credit = sum(payment_unallocated_totals.values(), Decimal('0'))
+    return {
+        "updatedInvoices": updated_invoices,
+        "paymentAllocatedTotals": payment_allocated_totals,
+        "paymentUnallocatedTotals": payment_unallocated_totals,
+        "totalUnallocatedCredit": total_unallocated_credit
+    }
+
+def fetch_customer_payments_payload(cur, customer_id, schema):
+    payment_amount_col = schema['payment_amount_col']
+    payment_date_col = schema['payment_date_col']
+    payment_note_col = schema['payment_note_col']
+    payment_created_col = schema['payment_created_col']
+    payment_updated_col = schema['payment_updated_col']
+    allocation_payment_fk_col = schema['allocation_payment_fk_col']
+    allocation_amount_col = schema['allocation_amount_col']
+    allocation_created_col = schema['allocation_created_col']
+
+    note_select = f'cp.{payment_note_col} AS payment_note,' if payment_note_col else 'NULL AS payment_note,'
+    payment_created_select = f'cp.{payment_created_col} AS payment_created_at,' if payment_created_col else 'NULL AS payment_created_at,'
+    payment_updated_select = f'cp.{payment_updated_col} AS payment_updated_at,' if payment_updated_col else 'NULL AS payment_updated_at,'
+    allocation_created_select = f'pa.{allocation_created_col} AS allocation_created_at,' if allocation_created_col else 'NULL AS allocation_created_at,'
+    payment_created_order = f', cp.{payment_created_col} DESC' if payment_created_col else ''
+    allocation_order = 'allocation_created_at ASC NULLS LAST, pa.id ASC NULLS LAST' if allocation_created_col else 'pa.id ASC NULLS LAST'
+
+    cur.execute(
+        f'''
+        SELECT
+            cp.id AS payment_id,
+            cp.customer_id,
+            cp.{payment_amount_col} AS payment_amount,
+            cp.{payment_date_col} AS payment_date,
+            {note_select}
+            {payment_created_select}
+            {payment_updated_select}
+            pa.id AS allocation_id,
+            pa.invoice_id,
+            pa.{allocation_amount_col} AS allocation_amount,
+            {allocation_created_select}
+            inv.invoice_number,
+            inv.status AS invoice_status
+        FROM customer_payments cp
+        LEFT JOIN payment_allocations pa ON pa.{allocation_payment_fk_col} = cp.id
+        LEFT JOIN invoices inv ON inv.id = pa.invoice_id
+        WHERE cp.customer_id = %s
+        ORDER BY cp.{payment_date_col} DESC{payment_created_order}, {allocation_order};
+        ''',
+        (str(customer_id),)
+    )
+    rows = fetchall_as_dicts(cur)
+
+    payment_map = {}
+    ordered_ids = []
+    for row in rows:
+        payment_id = row['payment_id']
+        if payment_id not in payment_map:
+            payment_map[payment_id] = {
+                "id": payment_id,
+                "customerId": row['customer_id'],
+                "customer_id": row['customer_id'],
+                "amount": row['payment_amount'],
+                "paymentDate": row['payment_date'],
+                "payment_date": row['payment_date'],
+                "note": row['payment_note'],
+                "createdAt": row['payment_created_at'],
+                "created_at": row['payment_created_at'],
+                "updatedAt": row['payment_updated_at'],
+                "updated_at": row['payment_updated_at'],
+                "allocations": []
+            }
+            ordered_ids.append(payment_id)
+
+        if row['allocation_id'] is not None:
+            payment_map[payment_id]["allocations"].append({
+                "id": row['allocation_id'],
+                "paymentId": payment_id,
+                "payment_id": payment_id,
+                "invoiceId": row['invoice_id'],
+                "invoice_id": row['invoice_id'],
+                "allocatedAmount": row['allocation_amount'],
+                "allocated_amount": row['allocation_amount'],
+                "invoiceNumber": row['invoice_number'],
+                "invoice_number": row['invoice_number'],
+                "invoiceStatus": row['invoice_status'],
+                "invoice_status": row['invoice_status'],
+                "createdAt": row['allocation_created_at'],
+                "created_at": row['allocation_created_at']
+            })
+
+    payments = []
+    total_unallocated_credit = Decimal('0')
+    for payment_id in ordered_ids:
+        payment = payment_map[payment_id]
+        allocated_total = sum(
+            (decimal_or_zero(allocation['allocatedAmount']) for allocation in payment['allocations']),
+            Decimal('0')
+        )
+        unallocated_amount = decimal_or_zero(payment['amount']) - allocated_total
+        if unallocated_amount < Decimal('0'):
+            unallocated_amount = Decimal('0')
+
+        payment['allocatedAmountTotal'] = allocated_total
+        payment['allocated_amount_total'] = allocated_total
+        payment['unallocatedAmount'] = unallocated_amount
+        payment['unallocated_amount'] = unallocated_amount
+
+        total_unallocated_credit += unallocated_amount
+        payments.append(payment)
+
+    customer_credit = {
+        "totalUnallocated": total_unallocated_credit,
+        "total_unallocated": total_unallocated_credit
+    }
+    return {
+        "customerId": str(customer_id),
+        "customer_id": str(customer_id),
+        "payments": payments,
+        "customerCredit": customer_credit,
+        "customer_credit": customer_credit
+    }
+
 def validate_line_items(line_items):
     if not isinstance(line_items, list) or len(line_items) == 0:
         return None, 'At least one line item is required'
@@ -438,7 +848,25 @@ def get_invoices():
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute('SELECT i.id, i.invoice_number, i.customer_id, c.name as customer_name, c.phone as customer_phone, i.issue_date, i.status, i.total, i.amount_paid FROM invoices i JOIN customers c ON i.customer_id = c.id ORDER BY issue_date DESC;')
+        cur.execute(
+            '''
+            SELECT
+                i.id,
+                i.invoice_number,
+                i.customer_id,
+                c.name as customer_name,
+                c.phone as customer_phone,
+                i.issue_date,
+                i.status,
+                i.total,
+                i.amount_paid,
+                i.created_at,
+                i.updated_at
+            FROM invoices i
+            JOIN customers c ON i.customer_id = c.id
+            ORDER BY issue_date DESC;
+            '''
+        )
         invoices = cur.fetchall()
         cur.close()
         conn.close()
@@ -457,7 +885,11 @@ def get_invoices():
                 "issueDate": inv[5],
                 "status": inv[6],
                 "total": inv[7],
-                "amountPaid": inv[8]
+                "amountPaid": inv[8],
+                "createdAt": inv[9],
+                "created_at": inv[9],
+                "updatedAt": inv[10],
+                "updated_at": inv[10]
             })
         print("Invoice List before jsonify:", invoice_list)
         return jsonify(invoice_list)
@@ -493,8 +925,10 @@ def generate_invoice_number(cur):
 
 @app.route('/api/invoices', methods=['POST'])
 def create_invoice():
+    conn = None
+    cur = None
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
         customer_id = data.get('customerId')
         issue_date = data.get('issueDate')
         status = data.get('status', 'pending')
@@ -509,6 +943,7 @@ def create_invoice():
 
         total = calculate_invoice_total(normalized_line_items)
 
+        customer_id = str(customer_id)
         conn = get_db_connection()
         cur = conn.cursor()
 
@@ -529,19 +964,30 @@ def create_invoice():
                 (invoice_id, item.get('itemId'), item['description'], item.get('group_name'), item['quantity'], item['unitPrice'])
             )
 
-        conn.commit()
-        cur.close()
-        conn.close()
+        payment_schema, schema_error = resolve_payment_schema(cur)
+        if schema_error:
+            return jsonify({'error': schema_error}), 500
+        recompute_customer_allocations(cur, customer_id, payment_schema)
 
+        conn.commit()
         return jsonify({'id': invoice_id, 'invoice_number': invoice_number, 'status': 'Invoice created'}), 201
     except Exception as e:
+        if conn:
+            conn.rollback()
         print(e)
         return internal_error(e)
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 @app.route('/api/invoices/<uuid:invoice_id>', methods=['PUT'])
 def update_invoice(invoice_id):
+    conn = None
+    cur = None
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
         customer_id = data.get('customerId')
         issue_date = data.get('issueDate')
         line_items = data.get('lineItems')
@@ -554,29 +1000,26 @@ def update_invoice(invoice_id):
             return jsonify({'error': validation_error}), 400
 
         total = calculate_invoice_total(normalized_line_items)
+        customer_id = str(customer_id)
 
         conn = get_db_connection()
         cur = conn.cursor()
 
-        cur.execute('SELECT amount_paid, status FROM invoices WHERE id = %s;', (str(invoice_id),))
+        cur.execute('SELECT customer_id, status FROM invoices WHERE id = %s FOR UPDATE;', (str(invoice_id),))
         existing_invoice = cur.fetchone()
         if not existing_invoice:
-            cur.close()
-            conn.close()
             return jsonify({'error': 'Invoice not found'}), 404
 
-        current_amount_paid, current_status = existing_invoice
-        adjusted_amount_paid = min(current_amount_paid, total)
-        unpaid_status = 'draft' if current_status == 'draft' else 'pending'
-        new_status = determine_invoice_status(total, adjusted_amount_paid, unpaid_status)
+        previous_customer_id = str(existing_invoice[0])
+        current_status = existing_invoice[1]
 
         cur.execute(
             '''
             UPDATE invoices
-            SET customer_id = %s, issue_date = %s, total = %s, amount_paid = %s, status = %s, updated_at = NOW()
+            SET customer_id = %s, issue_date = %s, total = %s, status = %s, updated_at = NOW()
             WHERE id = %s;
             ''',
-            (customer_id, issue_date, total, adjusted_amount_paid, new_status, str(invoice_id))
+            (customer_id, issue_date, total, current_status, str(invoice_id))
         )
 
         cur.execute('DELETE FROM line_items WHERE invoice_id = %s;', (str(invoice_id),))
@@ -590,120 +1033,368 @@ def update_invoice(invoice_id):
                 (str(invoice_id), item.get('itemId'), item['description'], item.get('group_name'), item['quantity'], item['unitPrice'])
             )
 
+        payment_schema, schema_error = resolve_payment_schema(cur)
+        if schema_error:
+            return jsonify({'error': schema_error}), 500
+
+        recompute_customer_allocations(cur, previous_customer_id, payment_schema)
+        if previous_customer_id != customer_id:
+            recompute_customer_allocations(cur, customer_id, payment_schema)
+
         invoice_details = fetch_invoice_details(cur, str(invoice_id))
         conn.commit()
-        cur.close()
-        conn.close()
-
         return jsonify({'status': 'Invoice updated', 'invoice': invoice_details})
     except Exception as e:
+        if conn:
+            conn.rollback()
         print(e)
         return internal_error(e)
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 @app.route('/api/invoices/<uuid:invoice_id>', methods=['DELETE'])
 def delete_invoice(invoice_id):
+    conn = None
+    cur = None
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute('DELETE FROM invoices WHERE id = %s RETURNING id;', (str(invoice_id),))
-        deleted_invoice_id = cur.fetchone()
-        conn.commit()
-        cur.close()
-        conn.close()
 
-        if deleted_invoice_id:
-            return jsonify({'message': 'Invoice deleted successfully'})
-        else:
+        cur.execute('SELECT customer_id FROM invoices WHERE id = %s FOR UPDATE;', (str(invoice_id),))
+        existing_invoice = cur.fetchone()
+        if not existing_invoice:
             return jsonify({'error': 'Invoice not found'}), 404
+        customer_id = str(existing_invoice[0])
+
+        payment_allocation_columns = get_table_columns(cur, 'payment_allocations')
+        if payment_allocation_columns and 'invoice_id' in payment_allocation_columns:
+            cur.execute('DELETE FROM payment_allocations WHERE invoice_id = %s;', (str(invoice_id),))
+
+        cur.execute('DELETE FROM invoices WHERE id = %s;', (str(invoice_id),))
+
+        payment_schema, schema_error = resolve_payment_schema(cur)
+        if schema_error:
+            return jsonify({'error': schema_error}), 500
+        recompute_result = recompute_customer_allocations(cur, customer_id, payment_schema)
+
+        conn.commit()
+        customer_credit = {
+            "totalUnallocated": recompute_result['totalUnallocatedCredit'],
+            "total_unallocated": recompute_result['totalUnallocatedCredit']
+        }
+        return jsonify({
+            'message': 'Invoice deleted successfully',
+            'customerId': customer_id,
+            'customer_id': customer_id,
+            'customerCredit': customer_credit,
+            'customer_credit': customer_credit
+        })
     except Exception as e:
+        if conn:
+            conn.rollback()
         print(e)
         return internal_error(e)
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 @app.route('/api/invoices/<uuid:invoice_id>/payment', methods=['PATCH'])
 def update_invoice_payment(invoice_id):
+    return jsonify({
+        'error': 'Invoice-level payment endpoint has been removed. Use /api/customers/<customer_id>/payments.'
+    }), 410
+
+@app.route('/api/customers/<uuid:customer_id>/payments', methods=['POST'])
+def create_customer_payment(customer_id):
+    conn = None
+    cur = None
     try:
         data = request.get_json() or {}
-        payment_amount = data.get('paymentAmount')
-        corrected_amount_paid = data.get('amountPaid')
+        amount_raw = data.get('amount')
+        if amount_raw is None and 'paymentAmount' in data:
+            amount_raw = data.get('paymentAmount')
+        payment_date_raw = data.get('paymentDate') or data.get('payment_date')
+        note = data.get('note') if 'note' in data else None
 
-        if (payment_amount is None and corrected_amount_paid is None) or (payment_amount is not None and corrected_amount_paid is not None):
-            return jsonify({'error': 'Provide exactly one of paymentAmount or amountPaid'}), 400
+        if amount_raw is None:
+            return jsonify({'error': 'Missing amount'}), 400
+
+        payment_amount, amount_error = parse_decimal_amount(amount_raw, 'amount')
+        if amount_error:
+            return jsonify({'error': amount_error}), 400
+
+        if payment_date_raw:
+            try:
+                payment_date = date.fromisoformat(str(payment_date_raw))
+            except ValueError:
+                return jsonify({'error': 'paymentDate must be a valid date (YYYY-MM-DD)'}), 400
+        else:
+            payment_date = date.today()
 
         conn = get_db_connection()
         cur = conn.cursor()
 
-        cur.execute('SELECT total, amount_paid, status FROM invoices WHERE id = %s;', (str(invoice_id),))
-        invoice = cur.fetchone()
-        if not invoice:
-            cur.close()
-            conn.close()
-            return jsonify({'error': 'Invoice not found'}), 404
+        if not ensure_customer_exists(cur, customer_id):
+            return jsonify({'error': 'Customer not found'}), 404
 
-        total, amount_paid, current_status = invoice
-        if payment_amount is not None:
-            try:
-                payment_amount = Decimal(str(payment_amount))
-            except (TypeError, ValueError, InvalidOperation):
-                cur.close()
-                conn.close()
-                return jsonify({'error': 'paymentAmount must be a valid number'}), 400
+        payment_schema, schema_error = resolve_payment_schema(cur)
+        if schema_error:
+            return jsonify({'error': schema_error}), 500
 
-            if payment_amount <= Decimal('0'):
-                cur.close()
-                conn.close()
-                return jsonify({'error': 'paymentAmount must be greater than 0'}), 400
+        payment_amount_col = payment_schema['payment_amount_col']
+        payment_date_col = payment_schema['payment_date_col']
+        payment_note_col = payment_schema['payment_note_col']
 
-            amount_due = total - amount_paid
-            if amount_due <= Decimal('0'):
-                cur.close()
-                conn.close()
-                return jsonify({'error': 'Invoice is already fully paid. Use amountPaid to correct it.'}), 400
+        if 'note' in data and not payment_note_col:
+            return jsonify({'error': 'customer_payments schema does not support note field'}), 400
 
-            if payment_amount > amount_due:
-                cur.close()
-                conn.close()
-                return jsonify({'error': 'Payment exceeds amount due'}), 400
+        insert_columns = ['customer_id', payment_amount_col, payment_date_col]
+        insert_values = [str(customer_id), payment_amount, payment_date]
+        if payment_note_col and 'note' in data:
+            insert_columns.append(payment_note_col)
+            insert_values.append(note)
 
-            new_amount_paid = amount_paid + payment_amount
-            success_message = 'Payment recorded'
-        else:
-            try:
-                corrected_amount_paid = Decimal(str(corrected_amount_paid))
-            except (TypeError, ValueError, InvalidOperation):
-                cur.close()
-                conn.close()
-                return jsonify({'error': 'amountPaid must be a valid number'}), 400
+        insert_sql = f'''
+            INSERT INTO customer_payments ({", ".join(insert_columns)})
+            VALUES ({", ".join(["%s"] * len(insert_columns))})
+            RETURNING id;
+        '''
+        cur.execute(insert_sql, insert_values)
+        payment_id = cur.fetchone()[0]
 
-            if corrected_amount_paid < Decimal('0'):
-                cur.close()
-                conn.close()
-                return jsonify({'error': 'amountPaid cannot be negative'}), 400
-
-            if corrected_amount_paid > total:
-                cur.close()
-                conn.close()
-                return jsonify({'error': 'amountPaid cannot exceed invoice total'}), 400
-
-            new_amount_paid = corrected_amount_paid
-            success_message = 'Paid amount updated'
-
-        unpaid_status = 'draft' if current_status == 'draft' else 'pending'
-        new_status = determine_invoice_status(total, new_amount_paid, unpaid_status)
-        
-        cur.execute(
-            'UPDATE invoices SET amount_paid = %s, status = %s, updated_at = NOW() WHERE id = %s;',
-            (new_amount_paid, new_status, str(invoice_id))
+        recompute_result = recompute_customer_allocations(cur, customer_id, payment_schema)
+        payload = fetch_customer_payments_payload(cur, customer_id, payment_schema)
+        payment_response = next(
+            (payment for payment in payload['payments'] if str(payment['id']) == str(payment_id)),
+            None
         )
 
-        invoice_details = fetch_invoice_details(cur, str(invoice_id))
         conn.commit()
-        cur.close()
-        conn.close()
+        return jsonify({
+            'status': 'Payment recorded',
+            'payment': payment_response,
+            'customerId': payload['customerId'],
+            'customer_id': payload['customer_id'],
+            'customerCredit': payload['customerCredit'],
+            'customer_credit': payload['customer_credit'],
+            'updatedInvoices': recompute_result['updatedInvoices']
+        }), 201
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        print(e)
+        return internal_error(e)
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
-        return jsonify({'status': success_message, 'invoice': invoice_details})
+@app.route('/api/customers/<uuid:customer_id>/payments/<uuid:payment_id>', methods=['PUT'])
+def update_customer_payment(customer_id, payment_id):
+    conn = None
+    cur = None
+    try:
+        data = request.get_json() or {}
+        has_amount = 'amount' in data or 'paymentAmount' in data
+        has_payment_date = 'paymentDate' in data or 'payment_date' in data
+        has_note = 'note' in data
+
+        if not has_amount and not has_payment_date and not has_note:
+            return jsonify({'error': 'Provide at least one of amount, paymentDate, or note'}), 400
+
+        payment_amount = None
+        if has_amount:
+            amount_input = data.get('amount')
+            if amount_input is None and 'paymentAmount' in data:
+                amount_input = data.get('paymentAmount')
+            payment_amount, amount_error = parse_decimal_amount(amount_input, 'amount')
+            if amount_error:
+                return jsonify({'error': amount_error}), 400
+
+        payment_date = None
+        if has_payment_date:
+            payment_date_raw = data.get('paymentDate') if 'paymentDate' in data else data.get('payment_date')
+            if payment_date_raw is None:
+                return jsonify({'error': 'paymentDate must be a valid date (YYYY-MM-DD)'}), 400
+            try:
+                payment_date = date.fromisoformat(str(payment_date_raw))
+            except ValueError:
+                return jsonify({'error': 'paymentDate must be a valid date (YYYY-MM-DD)'}), 400
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        if not ensure_customer_exists(cur, customer_id):
+            return jsonify({'error': 'Customer not found'}), 404
+
+        payment_schema, schema_error = resolve_payment_schema(cur)
+        if schema_error:
+            return jsonify({'error': schema_error}), 500
+
+        payment_note_col = payment_schema['payment_note_col']
+        payment_amount_col = payment_schema['payment_amount_col']
+        payment_date_col = payment_schema['payment_date_col']
+        payment_updated_col = payment_schema['payment_updated_col']
+
+        if has_note and not payment_note_col:
+            return jsonify({'error': 'customer_payments schema does not support note field'}), 400
+
+        cur.execute(
+            '''
+            SELECT id
+            FROM customer_payments
+            WHERE id = %s AND customer_id = %s
+            FOR UPDATE;
+            ''',
+            (str(payment_id), str(customer_id))
+        )
+        if not cur.fetchone():
+            return jsonify({'error': 'Payment not found'}), 404
+
+        set_clauses = []
+        set_values = []
+        if has_amount:
+            set_clauses.append(f'{payment_amount_col} = %s')
+            set_values.append(payment_amount)
+        if has_payment_date:
+            set_clauses.append(f'{payment_date_col} = %s')
+            set_values.append(payment_date)
+        if has_note:
+            set_clauses.append(f'{payment_note_col} = %s')
+            set_values.append(data.get('note'))
+        if payment_updated_col:
+            set_clauses.append(f'{payment_updated_col} = NOW()')
+
+        cur.execute(
+            f'''
+            UPDATE customer_payments
+            SET {", ".join(set_clauses)}
+            WHERE id = %s AND customer_id = %s;
+            ''',
+            set_values + [str(payment_id), str(customer_id)]
+        )
+
+        recompute_result = recompute_customer_allocations(cur, customer_id, payment_schema)
+        payload = fetch_customer_payments_payload(cur, customer_id, payment_schema)
+        payment_response = next(
+            (payment for payment in payload['payments'] if str(payment['id']) == str(payment_id)),
+            None
+        )
+
+        conn.commit()
+        return jsonify({
+            'status': 'Payment updated',
+            'payment': payment_response,
+            'customerId': payload['customerId'],
+            'customer_id': payload['customer_id'],
+            'customerCredit': payload['customerCredit'],
+            'customer_credit': payload['customer_credit'],
+            'updatedInvoices': recompute_result['updatedInvoices']
+        })
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        print(e)
+        return internal_error(e)
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+
+@app.route('/api/customers/<uuid:customer_id>/payments/<uuid:payment_id>', methods=['DELETE'])
+def delete_customer_payment(customer_id, payment_id):
+    conn = None
+    cur = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        if not ensure_customer_exists(cur, customer_id):
+            return jsonify({'error': 'Customer not found'}), 404
+
+        payment_schema, schema_error = resolve_payment_schema(cur)
+        if schema_error:
+            return jsonify({'error': schema_error}), 500
+
+        allocation_payment_fk_col = payment_schema['allocation_payment_fk_col']
+        cur.execute(
+            '''
+            SELECT id
+            FROM customer_payments
+            WHERE id = %s AND customer_id = %s
+            FOR UPDATE;
+            ''',
+            (str(payment_id), str(customer_id))
+        )
+        if not cur.fetchone():
+            return jsonify({'error': 'Payment not found'}), 404
+
+        cur.execute(
+            f'DELETE FROM payment_allocations WHERE {allocation_payment_fk_col} = %s;',
+            (str(payment_id),)
+        )
+        cur.execute(
+            'DELETE FROM customer_payments WHERE id = %s AND customer_id = %s;',
+            (str(payment_id), str(customer_id))
+        )
+
+        recompute_result = recompute_customer_allocations(cur, customer_id, payment_schema)
+        payload = fetch_customer_payments_payload(cur, customer_id, payment_schema)
+
+        conn.commit()
+        return jsonify({
+            'status': 'Payment deleted',
+            'deletedPaymentId': str(payment_id),
+            'deleted_payment_id': str(payment_id),
+            'customerId': payload['customerId'],
+            'customer_id': payload['customer_id'],
+            'customerCredit': payload['customerCredit'],
+            'customer_credit': payload['customer_credit'],
+            'updatedInvoices': recompute_result['updatedInvoices']
+        })
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        print(e)
+        return internal_error(e)
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+
+@app.route('/api/customers/<uuid:customer_id>/payments', methods=['GET'])
+def get_customer_payments(customer_id):
+    conn = None
+    cur = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        if not ensure_customer_exists(cur, customer_id):
+            return jsonify({'error': 'Customer not found'}), 404
+
+        payment_schema, schema_error = resolve_payment_schema(cur)
+        if schema_error:
+            return jsonify({'error': schema_error}), 500
+
+        payload = fetch_customer_payments_payload(cur, customer_id, payment_schema)
+        return jsonify(payload)
     except Exception as e:
         print(e)
         return internal_error(e)
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
 @app.route('/api/items/<uuid:item_id>/history', methods=['GET'])

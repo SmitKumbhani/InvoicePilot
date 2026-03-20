@@ -12,6 +12,8 @@ import { Button } from "./ui/button";
 import { Pencil, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { CustomerDialog } from "./customer-dialog";
+import { CustomerPaymentDialog } from "./customer-payment-dialog";
+import { CustomerLedgerDialog } from "./customer-ledger-dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,6 +31,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 
 type CustomerWithPending = Customer & {
   pendingAmount: number;
+  customerCredit: number;
   invoices: Invoice[];
 };
 
@@ -77,9 +80,48 @@ function InvoiceSubTable({ invoices }: { invoices: Invoice[] }) {
     )
 }
 
-function CustomerActions({ customer, onEdit, onDelete, isDeleting }: { customer: Customer, onEdit: (e: React.MouseEvent, customer: Customer) => void, onDelete: (e: React.MouseEvent, customerId: string) => void, isDeleting: boolean}) {
+function CustomerBalance({ customer }: { customer: CustomerWithPending }) {
+  const due = Math.max(customer.pendingAmount, 0);
+  const credit = Math.max(customer.customerCredit || 0, 0);
+
+  if (due > 0) {
+    return <span className="font-semibold">{formatCurrency(due)}</span>;
+  }
+
+  if (credit > 0) {
+    return (
+      <span className="font-semibold text-emerald-700 dark:text-emerald-300">
+        Credit {formatCurrency(credit)}
+      </span>
+    );
+  }
+
+  return <span className="font-semibold">{formatCurrency(0)}</span>;
+}
+
+function CustomerActions({
+  customer,
+  onEdit,
+  onDelete,
+  onRecordPayment,
+  onViewLedger,
+  isDeleting,
+}: {
+  customer: CustomerWithPending;
+  onEdit: (e: React.MouseEvent, customer: Customer) => void;
+  onDelete: (e: React.MouseEvent, customerId: string) => void;
+  onRecordPayment: (e: React.MouseEvent, customer: CustomerWithPending) => void;
+  onViewLedger: (e: React.MouseEvent, customer: CustomerWithPending) => void;
+  isDeleting: boolean;
+}) {
   return (
-    <div className="flex items-center justify-end">
+    <div className="flex items-center justify-end gap-1">
+      <Button variant="outline" size="sm" onClick={(e) => onRecordPayment(e, customer)}>
+        Record Payment
+      </Button>
+      <Button variant="secondary" size="sm" onClick={(e) => onViewLedger(e, customer)}>
+        Ledger
+      </Button>
       <Button variant="ghost" size="icon" onClick={(e) => onEdit(e, customer)}>
         <Pencil className="h-4 w-4" />
         <span className="sr-only">Edit</span>
@@ -120,6 +162,10 @@ export function CustomerClient({ customers, onCustomerUpdate }: CustomerClientPr
   const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null);
   const [isCustomerDialogOpen, setIsCustomerDialogOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
+  const [selectedPaymentCustomer, setSelectedPaymentCustomer] = useState<CustomerWithPending | null>(null);
+  const [isLedgerDialogOpen, setIsLedgerDialogOpen] = useState(false);
+  const [selectedLedgerCustomer, setSelectedLedgerCustomer] = useState<CustomerWithPending | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const isMobile = useIsMobile();
   const [localCustomers, setLocalCustomers] = useState(customers);
@@ -166,6 +212,32 @@ export function CustomerClient({ customers, onCustomerUpdate }: CustomerClientPr
     }
   };
 
+  const handleRecordPayment = (e: React.MouseEvent, customer: CustomerWithPending) => {
+    e.stopPropagation();
+    setSelectedPaymentCustomer(customer);
+    setIsPaymentDialogOpen(true);
+  };
+
+  const handlePaymentDialogClose = (open: boolean) => {
+    setIsPaymentDialogOpen(open);
+    if (!open) {
+      setSelectedPaymentCustomer(null);
+    }
+  };
+
+  const handleViewLedger = (e: React.MouseEvent, customer: CustomerWithPending) => {
+    e.stopPropagation();
+    setSelectedLedgerCustomer(customer);
+    setIsLedgerDialogOpen(true);
+  };
+
+  const handleLedgerDialogClose = (open: boolean) => {
+    setIsLedgerDialogOpen(open);
+    if (!open) {
+      setSelectedLedgerCustomer(null);
+    }
+  };
+
   const customerContent = localCustomers.length === 0 ? (
     <div className="text-center text-muted-foreground mt-8 col-span-full">
       No customers found.
@@ -182,12 +254,19 @@ export function CustomerClient({ customers, onCustomerUpdate }: CustomerClientPr
               </CardHeader>
               <CardContent>
                 <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Pending Amount</span>
-                    <span className="font-semibold">{formatCurrency(customer.pendingAmount)}</span>
+                    <span className="text-muted-foreground">Balance</span>
+                    <CustomerBalance customer={customer} />
                 </div>
               </CardContent>
               <CardFooter className="flex justify-end">
-                <CustomerActions customer={customer} onEdit={handleEditCustomer} onDelete={handleDeleteCustomer} isDeleting={isDeleting} />
+                <CustomerActions
+                  customer={customer}
+                  onEdit={handleEditCustomer}
+                  onDelete={handleDeleteCustomer}
+                  onRecordPayment={handleRecordPayment}
+                  onViewLedger={handleViewLedger}
+                  isDeleting={isDeleting}
+                />
               </CardFooter>
               {expandedCustomerId === customer.id && (
                 <div className="p-4 pt-0 border-t mt-4">
@@ -211,8 +290,8 @@ export function CustomerClient({ customers, onCustomerUpdate }: CustomerClientPr
                   <TableRow className="bg-muted/50 hover:bg-muted/50">
                       <TableHead className="w-1/3">Customer</TableHead>
                       <TableHead>Phone</TableHead>
-                      <TableHead className="text-right">Pending Amount</TableHead>
-                      <TableHead className="text-right w-32">Actions</TableHead>
+                      <TableHead className="text-right">Balance</TableHead>
+                      <TableHead className="text-right w-72">Actions</TableHead>
                   </TableRow>
               </TableHeader>
               <TableBody>
@@ -221,9 +300,18 @@ export function CustomerClient({ customers, onCustomerUpdate }: CustomerClientPr
                           <TableRow onClick={() => toggleCustomer(customer.id)} className="cursor-pointer">
                             <TableCell className="font-medium">{customer.name}</TableCell>
                             <TableCell>{customer.phone}</TableCell>
-                            <TableCell className="text-right">{formatCurrency(customer.pendingAmount)}</TableCell>
                             <TableCell className="text-right">
-                              <CustomerActions customer={customer} onEdit={handleEditCustomer} onDelete={handleDeleteCustomer} isDeleting={isDeleting} />
+                              <CustomerBalance customer={customer} />
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <CustomerActions
+                                customer={customer}
+                                onEdit={handleEditCustomer}
+                                onDelete={handleDeleteCustomer}
+                                onRecordPayment={handleRecordPayment}
+                                onViewLedger={handleViewLedger}
+                                isDeleting={isDeleting}
+                              />
                             </TableCell>
                           </TableRow>
                           {expandedCustomerId === customer.id && (
@@ -258,6 +346,17 @@ export function CustomerClient({ customers, onCustomerUpdate }: CustomerClientPr
         onOpenChange={handleDialogClose}
         customer={selectedCustomer}
         onCustomerUpdate={onCustomerUpdate}
+      />
+      <CustomerPaymentDialog
+        open={isPaymentDialogOpen}
+        onOpenChange={handlePaymentDialogClose}
+        customer={selectedPaymentCustomer}
+        onPaymentRecorded={onCustomerUpdate}
+      />
+      <CustomerLedgerDialog
+        open={isLedgerDialogOpen}
+        onOpenChange={handleLedgerDialogClose}
+        customer={selectedLedgerCustomer}
       />
     </>
   );

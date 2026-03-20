@@ -2,21 +2,17 @@
 "use client";
 
 import type { Invoice } from "@/lib/types";
-import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatCurrency, cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { PaymentDialog } from "./payment-dialog";
 import { Separator } from "./ui/separator";
 
 type InvoiceDetailsProps = {
   invoice: Invoice;
   previousBalanceDue: number;
   onItemFocus?: (itemId: string | null) => void;
-  onInvoiceUpdated?: (invoice: Invoice) => void;
 };
 
 const statusVariant: { [key in Invoice["status"]]: string } = {
@@ -26,8 +22,7 @@ const statusVariant: { [key in Invoice["status"]]: string } = {
   draft: "bg-gray-100 text-gray-800 dark:bg-gray-900/50 dark:text-gray-300",
 };
 
-export function InvoiceDetails({ invoice, previousBalanceDue, onItemFocus, onInvoiceUpdated }: InvoiceDetailsProps) {
-  const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
+export function InvoiceDetails({ invoice, previousBalanceDue, onItemFocus }: InvoiceDetailsProps) {
   const totalDue = invoice.total + previousBalanceDue;
   const grandTotalDue = totalDue - invoice.amountPaid;
 
@@ -101,20 +96,7 @@ export function InvoiceDetails({ invoice, previousBalanceDue, onItemFocus, onInv
                 </div>
             </div>
         </CardContent>
-        <CardFooter className="justify-end no-print">
-            <Button onClick={() => setIsPaymentDialogOpen(true)}>
-              {grandTotalDue > 0 ? "Record / Adjust Payment" : "Adjust Payment"}
-            </Button>
-        </CardFooter>
       </Card>
-      <PaymentDialog
-        invoice={invoice}
-        open={isPaymentDialogOpen}
-        onOpenChange={setIsPaymentDialogOpen}
-        onPaymentRecorded={(updatedInvoice) => {
-          onInvoiceUpdated?.(updatedInvoice);
-        }}
-      />
     </>
   );
 }

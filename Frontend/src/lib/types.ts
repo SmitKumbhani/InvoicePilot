@@ -49,3 +49,55 @@ export type InvoiceUpsertInput = {
   lineItems: LineItem[];
   status?: InvoiceStatus;
 };
+
+export type CustomerPaymentAllocation = {
+  id?: string;
+  invoiceId: string;
+  invoiceNumber?: string;
+  allocatedAmount: number;
+  invoiceTotal?: number;
+  invoiceAmountPaidBefore?: number;
+  invoiceAmountPaidAfter?: number;
+  invoiceRemainingBefore?: number;
+  invoiceRemainingAfter?: number;
+};
+
+export type CustomerPayment = {
+  id: string;
+  customerId: string;
+  amount: number;
+  paymentDate: string | Date;
+  note?: string;
+  allocations: CustomerPaymentAllocation[];
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
+};
+
+export type CustomerPaymentSummary = {
+  pendingAmount?: number;
+  outstandingAmount?: number;
+  totalOutstanding?: number;
+  totalPaid?: number;
+  totalAllocated?: number;
+  totalUnallocated?: number;
+  availableCredit?: number;
+  creditBalance?: number;
+  customerCredit?: number;
+};
+
+export type CustomerPaymentsResponse = {
+  payments: CustomerPayment[];
+  summary?: CustomerPaymentSummary;
+};
+
+export type CreateCustomerPaymentInput = {
+  amount: number;
+  paymentDate: string;
+  note?: string;
+};
+
+export type UpdateCustomerPaymentInput = {
+  amount: number;
+  paymentDate: string;
+  note?: string;
+};

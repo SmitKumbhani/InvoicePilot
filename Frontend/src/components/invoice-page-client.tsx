@@ -68,7 +68,6 @@ export function InvoicePageClient({
                   invoice={invoice}
                   previousBalanceDue={previousBalanceDue}
                   onItemFocus={setSelectedItemId}
-                  onInvoiceUpdated={setInvoice}
                 />
             </div>
             {!isMobile && (
