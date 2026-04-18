@@ -63,7 +63,8 @@ CREATE TABLE line_items (
     description TEXT NOT NULL, -- Store the item name at the time of invoicing
     group_name TEXT, -- Store the group name at the time of invoicing
     quantity INT NOT NULL CHECK (quantity > 0),
-    unit_price NUMERIC(10, 2) NOT NULL CHECK (unit_price >= 0)
+    unit_price NUMERIC(10, 2) NOT NULL CHECK (unit_price >= 0),
+    line_order INT NOT NULL DEFAULT 0 CHECK (line_order >= 0)
 );
 
 -- Indexes to speed up common queries.
@@ -74,6 +75,7 @@ CREATE INDEX idx_customer_payments_customer_id_payment_date ON customer_payments
 CREATE INDEX idx_payment_allocations_payment_id ON payment_allocations(payment_id);
 CREATE INDEX idx_payment_allocations_invoice_id ON payment_allocations(invoice_id);
 CREATE INDEX idx_line_items_invoice_id ON line_items(invoice_id);
+CREATE INDEX idx_line_items_invoice_id_line_order ON line_items(invoice_id, line_order, id);
 CREATE INDEX idx_line_items_item_id ON line_items(item_id);
 
 -- Optional: A function to automatically update the 'updated_at' timestamp.

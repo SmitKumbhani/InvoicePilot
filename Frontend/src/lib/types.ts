@@ -14,6 +14,7 @@ export type Item = {
 export type LineItem = {
   id?: string;
   itemId?: string | null;
+  lineOrder?: number;
   group_name?: string;
   description: string;
   quantity: number;

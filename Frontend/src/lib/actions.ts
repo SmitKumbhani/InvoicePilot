@@ -38,6 +38,7 @@ const toRecord = (value: unknown): Record<string, any> =>
 const normalizeLineItem = (lineItem: any): LineItem => ({
   id: lineItem.id ? String(lineItem.id) : undefined,
   itemId: lineItem.itemId ?? lineItem.item_id ?? null,
+  lineOrder: toOptionalNumber(lineItem.lineOrder ?? lineItem.line_order),
   group_name: lineItem.group_name ?? undefined,
   description: lineItem.description ?? lineItem.item_name ?? "",
   quantity: toNumber(lineItem.quantity),
@@ -234,6 +235,21 @@ export async function getInvoices(
   }
   const payload = await res.json();
   const invoices = Array.isArray(payload) ? payload.map(normalizeInvoice) : [];
+  invoices.sort((a, b) => {
+    const createdDelta =
+      new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime();
+    if (createdDelta !== 0) {
+      return createdDelta;
+    }
+
+    const issueDelta =
+      new Date(b.issueDate ?? 0).getTime() - new Date(a.issueDate ?? 0).getTime();
+    if (issueDelta !== 0) {
+      return issueDelta;
+    }
+
+    return String(b.id).localeCompare(String(a.id));
+  });
 
   if (status && status !== "all") {
     return invoices.filter((inv) => inv.status === status);

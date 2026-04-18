@@ -174,6 +174,28 @@ def ensure_customer_payment_schema():
             cur.execute('CREATE INDEX IF NOT EXISTS idx_payment_allocations_payment_id ON payment_allocations(payment_id);')
             cur.execute('CREATE INDEX IF NOT EXISTS idx_payment_allocations_invoice_id ON payment_allocations(invoice_id);')
 
+            # Ensure line item ordering is persisted for invoice detail rendering.
+            cur.execute('ALTER TABLE line_items ADD COLUMN IF NOT EXISTS line_order INTEGER;')
+            cur.execute(
+                '''
+                WITH ordered AS (
+                    SELECT
+                        id,
+                        ROW_NUMBER() OVER (PARTITION BY invoice_id ORDER BY ctid ASC) - 1 AS computed_order
+                    FROM line_items
+                )
+                UPDATE line_items li
+                SET line_order = ordered.computed_order
+                FROM ordered
+                WHERE li.id = ordered.id
+                  AND (li.line_order IS NULL OR li.line_order <> ordered.computed_order);
+                '''
+            )
+            cur.execute('ALTER TABLE line_items ALTER COLUMN line_order SET DEFAULT 0;')
+            cur.execute('UPDATE line_items SET line_order = 0 WHERE line_order IS NULL;')
+            cur.execute('ALTER TABLE line_items ALTER COLUMN line_order SET NOT NULL;')
+            cur.execute('CREATE INDEX IF NOT EXISTS idx_line_items_invoice_id_line_order ON line_items(invoice_id, line_order, id);')
+
             cur.execute("SELECT 1 FROM pg_trigger WHERE tgname = 'set_timestamp_customer_payments';")
             has_trigger = cur.fetchone() is not None
             if not has_trigger:
@@ -800,10 +822,11 @@ def fetch_invoice_details(cur, invoice_id):
 
     cur.execute(
         '''
-        SELECT li.id, li.item_id, li.description, li.group_name, li.quantity, li.unit_price, i.name
+        SELECT li.id, li.item_id, li.description, li.group_name, li.quantity, li.unit_price, i.name, li.line_order
         FROM line_items li
         LEFT JOIN items i ON li.item_id = i.id
-        WHERE li.invoice_id = %s;
+        WHERE li.invoice_id = %s
+        ORDER BY li.line_order ASC, li.id ASC;
         ''',
         (invoice_id,)
     )
@@ -839,7 +862,9 @@ def fetch_invoice_details(cur, invoice_id):
             "unitPrice": li[5],
             "unit_price": li[5],
             "itemName": li[6],
-            "item_name": li[6]
+            "item_name": li[6],
+            "lineOrder": li[7],
+            "line_order": li[7]
         } for li in line_items]
     }
 
@@ -864,7 +889,7 @@ def get_invoices():
                 i.updated_at
             FROM invoices i
             JOIN customers c ON i.customer_id = c.id
-            ORDER BY issue_date DESC;
+            ORDER BY i.created_at DESC, i.issue_date DESC, i.id DESC;
             '''
         )
         invoices = cur.fetchall()
@@ -958,10 +983,21 @@ def create_invoice():
         invoice_id = cur.fetchone()[0]
 
         # Create line items
-        for item in normalized_line_items:
+        for idx, item in enumerate(normalized_line_items):
             cur.execute(
-                'INSERT INTO line_items (invoice_id, item_id, description, group_name, quantity, unit_price) VALUES (%s, %s, %s, %s, %s, %s);',
-                (invoice_id, item.get('itemId'), item['description'], item.get('group_name'), item['quantity'], item['unitPrice'])
+                '''
+                INSERT INTO line_items (invoice_id, item_id, description, group_name, quantity, unit_price, line_order)
+                VALUES (%s, %s, %s, %s, %s, %s, %s);
+                ''',
+                (
+                    invoice_id,
+                    item.get('itemId'),
+                    item['description'],
+                    item.get('group_name'),
+                    item['quantity'],
+                    item['unitPrice'],
+                    idx
+                )
             )
 
         payment_schema, schema_error = resolve_payment_schema(cur)
@@ -1024,13 +1060,21 @@ def update_invoice(invoice_id):
 
         cur.execute('DELETE FROM line_items WHERE invoice_id = %s;', (str(invoice_id),))
 
-        for item in normalized_line_items:
+        for idx, item in enumerate(normalized_line_items):
             cur.execute(
                 '''
-                INSERT INTO line_items (invoice_id, item_id, description, group_name, quantity, unit_price)
-                VALUES (%s, %s, %s, %s, %s, %s);
+                INSERT INTO line_items (invoice_id, item_id, description, group_name, quantity, unit_price, line_order)
+                VALUES (%s, %s, %s, %s, %s, %s, %s);
                 ''',
-                (str(invoice_id), item.get('itemId'), item['description'], item.get('group_name'), item['quantity'], item['unitPrice'])
+                (
+                    str(invoice_id),
+                    item.get('itemId'),
+                    item['description'],
+                    item.get('group_name'),
+                    item['quantity'],
+                    item['unitPrice'],
+                    idx
+                )
             )
 
         payment_schema, schema_error = resolve_payment_schema(cur)
