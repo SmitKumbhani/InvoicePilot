@@ -3,8 +3,15 @@ import { getCustomers, getInvoiceById, getInvoices, getItems } from "@/lib/actio
 import { notFound } from "next/navigation";
 import { InvoicePageClient } from "@/components/invoice-page-client";
 
-export default async function InvoicePage({ params: paramsPromise }: { params: Promise<{ id: string }> }) {
+export default async function InvoicePage({
+  params: paramsPromise,
+  searchParams: searchParamsPromise,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams?: Promise<{ printMode?: string }>;
+}) {
   const params = await paramsPromise;
+  const searchParams = searchParamsPromise ? await searchParamsPromise : undefined;
   const invoice = await getInvoiceById(params.id);
 
   if (!invoice) {
@@ -24,6 +31,8 @@ export default async function InvoicePage({ params: paramsPromise }: { params: P
     return acc + Math.max(inv.total - inv.amountPaid, 0);
   }, 0);
 
+  const printMode = searchParams?.printMode === "invoice-only" ? "invoice-only" : "full";
+
 
   return (
     <InvoicePageClient
@@ -31,6 +40,7 @@ export default async function InvoicePage({ params: paramsPromise }: { params: P
       previousBalanceDue={previousBalanceDue}
       customers={customers}
       items={items}
+      printMode={printMode}
     />
   );
 }

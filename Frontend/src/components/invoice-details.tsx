@@ -12,6 +12,7 @@ import { Separator } from "./ui/separator";
 type InvoiceDetailsProps = {
   invoice: Invoice;
   previousBalanceDue: number;
+  totalsMode?: "full" | "invoice-only";
   onItemFocus?: (itemId: string | null) => void;
 };
 
@@ -22,7 +23,12 @@ const statusVariant: { [key in Invoice["status"]]: string } = {
   draft: "bg-gray-100 text-gray-800 dark:bg-gray-900/50 dark:text-gray-300",
 };
 
-export function InvoiceDetails({ invoice, previousBalanceDue, onItemFocus }: InvoiceDetailsProps) {
+export function InvoiceDetails({
+  invoice,
+  previousBalanceDue,
+  totalsMode = "full",
+  onItemFocus,
+}: InvoiceDetailsProps) {
   const totalDue = invoice.total + previousBalanceDue;
   const grandTotalDue = totalDue - invoice.amountPaid;
 
@@ -71,28 +77,42 @@ export function InvoiceDetails({ invoice, previousBalanceDue, onItemFocus }: Inv
             <Separator className="my-4"/>
             <div className="flex justify-end">
                 <div className="w-full max-w-sm space-y-2">
-                    <div className="flex justify-between">
-                        <span>Invoice Total</span>
-                        <span>{formatCurrency(invoice.total)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                        <span>Previous Due</span>
-                        <span>{formatCurrency(previousBalanceDue)}</span>
-                    </div>
+                    {totalsMode === "invoice-only" ? (
+                      <>
+                        <Separator className="my-2"/>
+                        <div className="rounded-md border border-primary/30 bg-primary/10 px-3 py-2">
+                          <div className="flex justify-between font-bold text-xl text-primary">
+                              <span>Invoice Total</span>
+                              <span>{formatCurrency(invoice.total)}</span>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex justify-between">
+                            <span>Invoice Total</span>
+                            <span>{formatCurrency(invoice.total)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span>Previous Due</span>
+                            <span>{formatCurrency(previousBalanceDue)}</span>
+                        </div>
 
-                    <div className="flex justify-between">
-                        <span className="text-muted-foreground">Total Due</span>
-                        <span>{formatCurrency(totalDue)}</span>
-                    </div>
-                     <div className="flex justify-between font-medium">
-                        <span>Amount Paid</span>
-                        <span>{formatCurrency(invoice.amountPaid)}</span>
-                    </div>
-                    <Separator className="my-2"/>
-                    <div className="flex justify-between font-bold text-xl text-primary">
-                        <span>Grand Total Due</span>
-                        <span>{formatCurrency(grandTotalDue)}</span>
-                    </div>
+                        <div className="flex justify-between">
+                            <span className="text-muted-foreground">Total Due</span>
+                            <span>{formatCurrency(totalDue)}</span>
+                        </div>
+                        <div className="flex justify-between font-medium">
+                            <span>Amount Paid</span>
+                            <span>{formatCurrency(invoice.amountPaid)}</span>
+                        </div>
+                        <Separator className="my-2"/>
+                        <div className="flex justify-between font-bold text-xl text-primary">
+                            <span>Grand Total Due</span>
+                            <span>{formatCurrency(grandTotalDue)}</span>
+                        </div>
+                      </>
+                    )}
                 </div>
             </div>
         </CardContent>

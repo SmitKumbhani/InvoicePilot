@@ -33,6 +33,7 @@ import {
 import { useApi } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { InvoicePrintInterceptorDialog } from "./invoice-print-interceptor-dialog";
 
 type LedgerClientProps = {
   invoices: Invoice[];
@@ -51,8 +52,16 @@ export function LedgerClient({ invoices: initialInvoices, onInvoiceUpdate }: Led
   const [filter, setFilter] = useState<"all" | Invoice["status"]>("all");
   const router = useRouter();
   const { toast } = useToast();
-  const { deleteInvoice } = useApi();
+  const { deleteInvoice, getInvoices } = useApi();
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
+  const [printContext, setPrintContext] = useState<{
+    invoiceId: string;
+    invoiceNumber: string;
+    invoiceTotal: number;
+    previousBalanceDue: number;
+    amountPaid: number;
+  } | null>(null);
   const isMobile = useIsMobile();
 
   // Keep local state in sync with props
@@ -71,35 +80,43 @@ export function LedgerClient({ invoices: initialInvoices, onInvoiceUpdate }: Led
     router.push(`/invoices/${invoiceId}`);
   };
 
-  const handlePrint = (e: React.MouseEvent, invoiceId: string) => {
+  const handlePrint = async (e: React.MouseEvent, invoiceId: string) => {
     e.stopPropagation();
-    const printUrl = `/invoices/${invoiceId}?print=true`;
-    
-    const iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    iframe.src = printUrl;
-    
-    iframe.onload = function() {
-        if (iframe.contentWindow) {
-            iframe.contentWindow.focus();
-            iframe.contentWindow.print();
-            
-            const removeIframe = () => {
-                if (iframe.parentNode) {
-                    document.body.removeChild(iframe);
-                }
-            };
-            
-            // For most browsers
-            if (iframe.contentWindow.onafterprint !== undefined) {
-                iframe.contentWindow.onafterprint = removeIframe;
-            } else {
-                // Fallback for browsers that don't support onafterprint (like some versions of Firefox)
-                setTimeout(removeIframe, 1000); 
-            }
-        }
-    };
-    document.body.appendChild(iframe);
+    const fallbackInvoice = invoices.find((invoice) => invoice.id === invoiceId);
+    if (!fallbackInvoice) {
+      return;
+    }
+
+    setPrintContext({
+      invoiceId: fallbackInvoice.id,
+      invoiceNumber: fallbackInvoice.invoiceNumber,
+      invoiceTotal: fallbackInvoice.total,
+      previousBalanceDue: 0,
+      amountPaid: fallbackInvoice.amountPaid,
+    });
+    setIsPrintDialogOpen(true);
+
+    try {
+      const allInvoices = await getInvoices();
+      const selected = allInvoices.find((invoice) => invoice.id === invoiceId);
+      if (!selected) {
+        return;
+      }
+
+      const previousBalanceDue = allInvoices
+        .filter((invoice) => invoice.customerId === selected.customerId && invoice.id !== selected.id)
+        .reduce((sum, invoice) => sum + Math.max(invoice.total - invoice.amountPaid, 0), 0);
+
+      setPrintContext({
+        invoiceId: selected.id,
+        invoiceNumber: selected.invoiceNumber,
+        invoiceTotal: selected.total,
+        previousBalanceDue,
+        amountPaid: selected.amountPaid,
+      });
+    } catch {
+      // Keep fallback context if this fetch fails.
+    }
   };
 
   const handleDeleteInvoice = async (e: React.MouseEvent, invoiceId: string) => {
@@ -158,6 +175,15 @@ export function LedgerClient({ invoices: initialInvoices, onInvoiceUpdate }: Led
             </TabsContent>
         ))}
       </Tabs>
+      <InvoicePrintInterceptorDialog
+        open={isPrintDialogOpen}
+        onOpenChange={setIsPrintDialogOpen}
+        invoiceId={printContext?.invoiceId ?? null}
+        invoiceNumber={printContext?.invoiceNumber}
+        invoiceTotal={printContext?.invoiceTotal}
+        previousBalanceDue={printContext?.previousBalanceDue}
+        amountPaid={printContext?.amountPaid}
+      />
     </>
   );
 }
@@ -165,7 +191,7 @@ export function LedgerClient({ invoices: initialInvoices, onInvoiceUpdate }: Led
 type InvoiceActionProps = {
   invoiceId: string;
   invoiceNumber: string;
-  onPrintClick: (e: React.MouseEvent, invoiceId: string) => void;
+  onPrintClick: (e: React.MouseEvent, invoiceId: string) => void | Promise<void>;
   onDeleteClick: (e: React.MouseEvent, invoiceId: string) => Promise<void>;
   isDeleting: boolean;
 };
@@ -210,7 +236,7 @@ function InvoiceActions({ invoiceId, invoiceNumber, onPrintClick, onDeleteClick,
 type InvoiceCardListProps = {
   invoices: Invoice[];
   onCardClick: (invoiceId: string) => void;
-  onPrintClick: (e: React.MouseEvent, invoiceId: string) => void;
+  onPrintClick: (e: React.MouseEvent, invoiceId: string) => void | Promise<void>;
   onDeleteClick: (e: React.MouseEvent, invoiceId: string) => Promise<void>;
   isDeleting: boolean;
 };
@@ -271,7 +297,7 @@ function InvoiceCardList({ invoices, onCardClick, onPrintClick, onDeleteClick, i
 type InvoiceTableProps = {
   invoices: Invoice[];
   onRowClick: (invoiceId: string) => void;
-  onPrintClick: (e: React.MouseEvent, invoiceId: string) => void;
+  onPrintClick: (e: React.MouseEvent, invoiceId: string) => void | Promise<void>;
   onDeleteClick: (e: React.MouseEvent, invoiceId: string) => Promise<void>;
   isDeleting: boolean;
 };

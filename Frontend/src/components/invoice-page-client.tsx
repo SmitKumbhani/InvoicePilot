@@ -10,26 +10,26 @@ import { ArrowLeft, Pencil, Printer } from "lucide-react";
 import { PriceHistoryPanel } from "@/components/price-history-panel";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { InvoiceEditDialog } from "./invoice-edit-dialog";
+import { InvoicePrintInterceptorDialog } from "./invoice-print-interceptor-dialog";
 
 export function InvoicePageClient({
   invoice: initialInvoice,
   previousBalanceDue,
   customers,
   items,
+  printMode = "full",
 }: {
   invoice: Invoice;
   previousBalanceDue: number;
   customers: Customer[];
   items: Item[];
+  printMode?: "full" | "invoice-only";
 }) {
   const [invoice, setInvoice] = useState(initialInvoice);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
   const isMobile = useIsMobile();
-
-  const handlePrint = () => {
-    window.print();
-  };
 
   return (
     <>
@@ -56,7 +56,7 @@ export function InvoicePageClient({
                   <Pencil />
                   Edit Invoice
                 </Button>
-                <Button onClick={handlePrint}>
+                <Button onClick={() => setIsPrintDialogOpen(true)} className="no-print">
                   <Printer />
                   Print Invoice
                 </Button>
@@ -67,6 +67,7 @@ export function InvoicePageClient({
                 <InvoiceDetails
                   invoice={invoice}
                   previousBalanceDue={previousBalanceDue}
+                  totalsMode={printMode}
                   onItemFocus={setSelectedItemId}
                 />
             </div>
@@ -84,6 +85,15 @@ export function InvoicePageClient({
         customers={customers}
         items={items}
         onInvoiceUpdated={setInvoice}
+      />
+      <InvoicePrintInterceptorDialog
+        open={isPrintDialogOpen}
+        onOpenChange={setIsPrintDialogOpen}
+        invoiceId={invoice.id}
+        invoiceNumber={invoice.invoiceNumber}
+        invoiceTotal={invoice.total}
+        previousBalanceDue={previousBalanceDue}
+        amountPaid={invoice.amountPaid}
       />
     </>
   );
