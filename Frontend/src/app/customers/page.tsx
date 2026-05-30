@@ -88,6 +88,17 @@ export default function CustomersPage() {
         );
     }, [customers, searchTerm]);
 
+    const customerTotals = useMemo(() => {
+        return customers.reduce(
+            (acc, customer) => {
+                acc.pendingAmount += Math.max(customer.pendingAmount || 0, 0);
+                acc.customerCredit += Math.max(customer.customerCredit || 0, 0);
+                return acc;
+            },
+            { pendingAmount: 0, customerCredit: 0 }
+        );
+    }, [customers]);
+
 
     if (loading) {
         return <div>Loading...</div>
@@ -118,7 +129,11 @@ export default function CustomersPage() {
                     onChange={(e) => setSearchTerm(e.target.value)}
                 />
             </div>
-            <CustomerClient customers={filteredCustomers} onCustomerUpdate={handleCustomerUpdate} />
+            <CustomerClient
+                customers={filteredCustomers}
+                totals={customerTotals}
+                onCustomerUpdate={handleCustomerUpdate}
+            />
              <CustomerDialog
                 open={isCustomerDialogOpen}
                 onOpenChange={setIsCustomerDialogOpen}

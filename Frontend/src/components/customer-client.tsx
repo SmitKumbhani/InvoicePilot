@@ -4,7 +4,7 @@
 import type { Invoice, Customer } from "@/lib/types";
 import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatCurrency, cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { Badge } from "./ui/badge";
@@ -37,6 +37,10 @@ type CustomerWithPending = Customer & {
 
 type CustomerClientProps = {
   customers: CustomerWithPending[];
+  totals: {
+    pendingAmount: number;
+    customerCredit: number;
+  };
   onCustomerUpdate: () => void;
 };
 
@@ -156,7 +160,7 @@ function CustomerActions({
   )
 }
 
-export function CustomerClient({ customers, onCustomerUpdate }: CustomerClientProps) {
+export function CustomerClient({ customers, totals, onCustomerUpdate }: CustomerClientProps) {
   const { toast } = useToast();
   const { deleteCustomer } = useApi();
   const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null);
@@ -238,104 +242,149 @@ export function CustomerClient({ customers, onCustomerUpdate }: CustomerClientPr
     }
   };
 
-  const customerContent = localCustomers.length === 0 ? (
-    <div className="text-center text-muted-foreground mt-8 col-span-full">
-      No customers found.
-    </div>
-  ) : (
-    isMobile ? (
-       <div className="space-y-4">
-        {localCustomers.map(customer => (
-          <React.Fragment key={customer.id}>
-            <Card onClick={() => toggleCustomer(customer.id)} className="cursor-pointer">
-              <CardHeader>
+  let customerContent: React.ReactNode;
+  if (isMobile) {
+    customerContent = (
+      <div className="space-y-4">
+        {localCustomers.length === 0 ? (
+          <div className="text-center text-muted-foreground mt-8">
+            No customers found.
+          </div>
+        ) : (
+          localCustomers.map((customer) => (
+            <React.Fragment key={customer.id}>
+              <Card onClick={() => toggleCustomer(customer.id)} className="cursor-pointer">
+                <CardHeader>
                   <CardTitle>{customer.name}</CardTitle>
                   <CardDescription>{customer.phone}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex justify-between items-center">
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Balance</span>
                     <CustomerBalance customer={customer} />
-                </div>
-              </CardContent>
-              <CardFooter className="flex justify-end">
-                <CustomerActions
-                  customer={customer}
-                  onEdit={handleEditCustomer}
-                  onDelete={handleDeleteCustomer}
-                  onRecordPayment={handleRecordPayment}
-                  onViewLedger={handleViewLedger}
-                  isDeleting={isDeleting}
-                />
-              </CardFooter>
-              {expandedCustomerId === customer.id && (
-                <div className="p-4 pt-0 border-t mt-4">
-                  <h4 className="font-semibold mb-2 text-sm">Pending Invoices</h4>
-                  {customer.invoices.length > 0 ? (
+                  </div>
+                </CardContent>
+                <CardFooter className="flex justify-end">
+                  <CustomerActions
+                    customer={customer}
+                    onEdit={handleEditCustomer}
+                    onDelete={handleDeleteCustomer}
+                    onRecordPayment={handleRecordPayment}
+                    onViewLedger={handleViewLedger}
+                    isDeleting={isDeleting}
+                  />
+                </CardFooter>
+                {expandedCustomerId === customer.id && (
+                  <div className="mt-4 border-t p-4 pt-0">
+                    <h4 className="mb-2 text-sm font-semibold">Pending Invoices</h4>
+                    {customer.invoices.length > 0 ? (
                       <InvoiceSubTable invoices={customer.invoices} />
-                  ) : (
+                    ) : (
                       <p className="text-sm text-muted-foreground">No pending invoices.</p>
-                  )}
-                </div>
-              )}
-            </Card>
-          </React.Fragment>
-        ))}
+                    )}
+                  </div>
+                )}
+              </Card>
+            </React.Fragment>
+          ))
+        )}
+        <Card className="border-dashed bg-muted/20">
+          <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-medium">Ledger totals</p>
+              <p className="text-xs text-muted-foreground">Across all customers</p>
+            </div>
+            <div className="flex flex-col gap-1 text-sm sm:text-right">
+              <div className="flex items-center justify-between gap-8 sm:justify-end">
+                <span className="text-muted-foreground">Pending</span>
+                <span className="font-semibold">{formatCurrency(totals.pendingAmount)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-8 sm:justify-end">
+                <span className="text-muted-foreground">Credit</span>
+                <span className="font-semibold text-emerald-700 dark:text-emerald-300">
+                  {formatCurrency(totals.customerCredit)}
+                </span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
-    ) : (
+    );
+  } else {
+    customerContent = (
       <Card>
         <CardContent className="p-0">
           <Table>
-              <TableHeader>
-                  <TableRow className="bg-muted/50 hover:bg-muted/50">
-                      <TableHead className="w-1/3">Customer</TableHead>
-                      <TableHead>Phone</TableHead>
-                      <TableHead className="text-right">Balance</TableHead>
-                      <TableHead className="text-right w-72">Actions</TableHead>
+            <TableHeader>
+              <TableRow className="bg-muted/50 hover:bg-muted/50">
+                <TableHead className="w-1/3">Customer</TableHead>
+                <TableHead>Phone</TableHead>
+                <TableHead className="text-right">Balance</TableHead>
+                <TableHead className="w-72 text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {localCustomers.map((customer) => (
+                <React.Fragment key={customer.id}>
+                  <TableRow onClick={() => toggleCustomer(customer.id)} className="cursor-pointer">
+                    <TableCell className="font-medium">{customer.name}</TableCell>
+                    <TableCell>{customer.phone}</TableCell>
+                    <TableCell className="text-right">
+                      <CustomerBalance customer={customer} />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <CustomerActions
+                        customer={customer}
+                        onEdit={handleEditCustomer}
+                        onDelete={handleDeleteCustomer}
+                        onRecordPayment={handleRecordPayment}
+                        onViewLedger={handleViewLedger}
+                        isDeleting={isDeleting}
+                      />
+                    </TableCell>
                   </TableRow>
-              </TableHeader>
-              <TableBody>
-                  {localCustomers.map(customer => (
-                      <React.Fragment key={customer.id}>
-                          <TableRow onClick={() => toggleCustomer(customer.id)} className="cursor-pointer">
-                            <TableCell className="font-medium">{customer.name}</TableCell>
-                            <TableCell>{customer.phone}</TableCell>
-                            <TableCell className="text-right">
-                              <CustomerBalance customer={customer} />
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <CustomerActions
-                                customer={customer}
-                                onEdit={handleEditCustomer}
-                                onDelete={handleDeleteCustomer}
-                                onRecordPayment={handleRecordPayment}
-                                onViewLedger={handleViewLedger}
-                                isDeleting={isDeleting}
-                              />
-                            </TableCell>
-                          </TableRow>
-                          {expandedCustomerId === customer.id && (
-                              <TableRow>
-                                  <TableCell colSpan={4} className="p-0">
-                                      <div className="p-4 bg-muted/20">
-                                          <h4 className="font-semibold mb-2 px-4">Pending Invoices</h4>
-                                          {customer.invoices.length > 0 ? (
-                                              <InvoiceSubTable invoices={customer.invoices} />
-                                          ) : (
-                                              <p className="text-sm text-muted-foreground px-4">No pending invoices.</p>
-                                          )}
-                                      </div>
-                                  </TableCell>
-                              </TableRow>
+                  {expandedCustomerId === customer.id && (
+                    <TableRow>
+                      <TableCell colSpan={4} className="p-0">
+                        <div className="bg-muted/20 p-4">
+                          <h4 className="mb-2 px-4 font-semibold">Pending Invoices</h4>
+                          {customer.invoices.length > 0 ? (
+                            <InvoiceSubTable invoices={customer.invoices} />
+                          ) : (
+                            <p className="px-4 text-sm text-muted-foreground">No pending invoices.</p>
                           )}
-                      </React.Fragment>
-                  ))}
-              </TableBody>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </React.Fragment>
+              ))}
+            </TableBody>
+            <TableFooter>
+              <TableRow className="bg-muted/30 hover:bg-muted/30">
+                <TableCell colSpan={2}>
+                  <div>
+                    <div className="font-semibold">Ledger totals</div>
+                    <div className="text-xs text-muted-foreground">Across all customers</div>
+                  </div>
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="font-semibold">{formatCurrency(totals.pendingAmount)}</div>
+                  <div className="text-xs text-muted-foreground">Pending</div>
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="font-semibold text-emerald-700 dark:text-emerald-300">
+                    {formatCurrency(totals.customerCredit)}
+                  </div>
+                  <div className="text-xs text-muted-foreground">Credit</div>
+                </TableCell>
+              </TableRow>
+            </TableFooter>
           </Table>
         </CardContent>
       </Card>
-    )
-  );
+    );
+  }
 
   return (
     <>
