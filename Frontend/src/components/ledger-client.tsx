@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, cn } from "@/lib/utils";
 import { format } from "date-fns";
@@ -33,6 +34,7 @@ import {
 import { useApi } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { compareDate, compareNumber, compareText, useSortableData } from "@/hooks/use-sortable-data";
 import { InvoicePrintInterceptorDialog } from "./invoice-print-interceptor-dialog";
 
 type LedgerClientProps = {
@@ -302,7 +304,31 @@ type InvoiceTableProps = {
   isDeleting: boolean;
 };
 
+type InvoiceSortKey = "invoiceNumber" | "customer" | "issueDate" | "status" | "amountDue" | "total";
+
 function InvoiceTable({ invoices, onRowClick, onPrintClick, onDeleteClick, isDeleting }: InvoiceTableProps) {
+  const { sortedData: sortedInvoices, sortConfig, requestSort } = useSortableData<Invoice, InvoiceSortKey>(
+    invoices,
+    {
+      invoiceNumber: (first, second) => compareText(first.invoiceNumber, second.invoiceNumber),
+      customer: (first, second) => compareText(first.customer?.name, second.customer?.name),
+      issueDate: (first, second) => compareDate(first.issueDate, second.issueDate),
+      status: (first, second) => compareText(first.status, second.status),
+      amountDue: (first, second) =>
+        compareNumber(
+          Math.max(first.total - first.amountPaid, 0),
+          Math.max(second.total - second.amountPaid, 0)
+        ),
+      total: (first, second) => compareNumber(first.total, second.total),
+    }
+  );
+
+  const sortableHeadProps = (key: InvoiceSortKey) => ({
+    active: sortConfig?.key === key,
+    direction: sortConfig?.key === key ? sortConfig.direction : undefined,
+    onSort: () => requestSort(key),
+  });
+
   if (invoices.length === 0) {
     return (
       <div className="text-center text-muted-foreground mt-8">
@@ -316,17 +342,17 @@ function InvoiceTable({ invoices, onRowClick, onPrintClick, onDeleteClick, isDel
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Invoice #</TableHead>
-              <TableHead>Customer</TableHead>
-              <TableHead className="hidden md:table-cell">Issue Date</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Amount Due</TableHead>
-              <TableHead className="text-right hidden md:table-cell">Total</TableHead>
+              <SortableTableHead {...sortableHeadProps("invoiceNumber")}>Invoice #</SortableTableHead>
+              <SortableTableHead {...sortableHeadProps("customer")}>Customer</SortableTableHead>
+              <SortableTableHead {...sortableHeadProps("issueDate")} className="hidden md:table-cell">Issue Date</SortableTableHead>
+              <SortableTableHead {...sortableHeadProps("status")}>Status</SortableTableHead>
+              <SortableTableHead {...sortableHeadProps("amountDue")} className="text-right" align="right">Amount Due</SortableTableHead>
+              <SortableTableHead {...sortableHeadProps("total")} className="text-right hidden md:table-cell" align="right">Total</SortableTableHead>
               <TableHead className="text-right w-28">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {invoices.map((invoice) => (
+            {sortedInvoices.map((invoice) => (
               <TableRow key={invoice.id} onClick={() => onRowClick(invoice.id)} className="cursor-pointer">
                 <TableCell className="font-medium">
                   {invoice.invoiceNumber}

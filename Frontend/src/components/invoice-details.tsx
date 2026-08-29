@@ -1,13 +1,15 @@
 
 "use client";
 
-import type { Invoice } from "@/lib/types";
+import type { Invoice, LineItem } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { formatCurrency, cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "./ui/separator";
+import { compareNumber, compareText, useSortableData } from "@/hooks/use-sortable-data";
 
 type InvoiceDetailsProps = {
   invoice: Invoice;
@@ -15,6 +17,8 @@ type InvoiceDetailsProps = {
   totalsMode?: "full" | "invoice-only";
   onItemFocus?: (itemId: string | null) => void;
 };
+
+type LineItemSortKey = "group" | "description" | "quantity" | "unitPrice" | "total";
 
 const statusVariant: { [key in Invoice["status"]]: string } = {
   paid: "bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300",
@@ -31,6 +35,23 @@ export function InvoiceDetails({
 }: InvoiceDetailsProps) {
   const totalDue = invoice.total + previousBalanceDue;
   const grandTotalDue = totalDue - invoice.amountPaid;
+  const { sortedData: sortedLineItems, sortConfig, requestSort } = useSortableData<LineItem, LineItemSortKey>(
+    invoice.lineItems,
+    {
+      group: (first, second) => compareText(first.group_name, second.group_name),
+      description: (first, second) => compareText(first.description, second.description),
+      quantity: (first, second) => compareNumber(first.quantity, second.quantity),
+      unitPrice: (first, second) => compareNumber(first.unitPrice, second.unitPrice),
+      total: (first, second) =>
+        compareNumber(first.quantity * first.unitPrice, second.quantity * second.unitPrice),
+    }
+  );
+
+  const sortableHeadProps = (key: LineItemSortKey) => ({
+    active: sortConfig?.key === key,
+    direction: sortConfig?.key === key ? sortConfig.direction : undefined,
+    onSort: () => requestSort(key),
+  });
 
   return (
     <>
@@ -55,15 +76,15 @@ export function InvoiceDetails({
             <Table>
                 <TableHeader>
                     <TableRow>
-                        <TableHead>Group</TableHead>
-                        <TableHead>Description</TableHead>
-                        <TableHead className="text-center">Quantity</TableHead>
-                        <TableHead className="text-right">Unit Price</TableHead>
-                        <TableHead className="text-right">Total</TableHead>
+                        <SortableTableHead {...sortableHeadProps("group")}>Group</SortableTableHead>
+                        <SortableTableHead {...sortableHeadProps("description")}>Description</SortableTableHead>
+                        <SortableTableHead {...sortableHeadProps("quantity")} className="text-center" align="center">Quantity</SortableTableHead>
+                        <SortableTableHead {...sortableHeadProps("unitPrice")} className="text-right" align="right">Unit Price</SortableTableHead>
+                        <SortableTableHead {...sortableHeadProps("total")} className="text-right" align="right">Total</SortableTableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
-                    {invoice.lineItems.map((item, index) => (
+                    {sortedLineItems.map((item, index) => (
                         <TableRow key={item.id ?? index} onFocus={() => onItemFocus?.(item.itemId ?? null)} onClick={() => onItemFocus?.(item.itemId ?? null)} className="cursor-pointer">
                             <TableCell>{item.group_name || 'N/A'}</TableCell>
                             <TableCell className="font-medium">{item.description}</TableCell>

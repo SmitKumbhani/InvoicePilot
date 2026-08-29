@@ -16,15 +16,16 @@ import {
   TableBody,
   TableCell,
   TableFooter,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { useToast } from "@/hooks/use-toast";
 import { useApi } from "@/lib/api";
 import type { Customer, CustomerPayment, Invoice } from "@/lib/types";
 import { formatCurrency } from "@/lib/utils";
 import { Printer, RefreshCcw } from "lucide-react";
+import { compareNumber, compareText, useSortableData } from "@/hooks/use-sortable-data";
 
 type CustomerWithPending = Customer & {
   pendingAmount: number;
@@ -54,6 +55,7 @@ type LedgerEvent =
 
 type LedgerRow = {
   id: string;
+  dateSort: number;
   dateLabel: string;
   transactionType: "Invoice" | "Payment" | "Credit";
   reference: string;
@@ -66,6 +68,17 @@ type LedgerRow = {
   invoicePaid: number | null;
   invoiceDue: number | null;
 };
+
+type LedgerSortKey =
+  | "date"
+  | "type"
+  | "reference"
+  | "invoice"
+  | "invoiceTotal"
+  | "invoicePaid"
+  | "invoiceDue"
+  | "paymentAmount"
+  | "balance";
 
 const roundMoney = (value: number): number =>
   Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
@@ -173,6 +186,7 @@ const buildLedgerRows = (
       runningBalance = roundMoney(runningBalance + invoiceTotal);
       rows.push({
         id: `invoice-${invoice.id}`,
+        dateSort: toTime(invoice.issueDate),
         dateLabel: toDateLabel(invoice.issueDate),
         transactionType: "Invoice",
         reference: invoice.invoiceNumber,
@@ -200,6 +214,7 @@ const buildLedgerRows = (
 
       rows.push({
         id: `payment-${payment.id}-${allocation.id ?? allocation.invoiceId}`,
+        dateSort: toTime(payment.paymentDate),
         dateLabel: toDateLabel(payment.paymentDate),
         transactionType: "Payment",
         reference: paymentReference,
@@ -222,6 +237,7 @@ const buildLedgerRows = (
       runningBalance = roundMoney(runningBalance - unallocated);
       rows.push({
         id: `payment-credit-${payment.id}`,
+        dateSort: toTime(payment.paymentDate),
         dateLabel: toDateLabel(payment.paymentDate),
         transactionType: "Credit",
         reference: paymentReference,
@@ -316,6 +332,26 @@ export function CustomerLedgerDialog({
     () => buildLedgerRows(invoices, payments),
     [invoices, payments]
   );
+  const { sortedData: sortedRows, sortConfig, requestSort } = useSortableData<LedgerRow, LedgerSortKey>(
+    rows,
+    {
+      date: (first, second) => compareNumber(first.dateSort, second.dateSort),
+      type: (first, second) => compareText(first.transactionType, second.transactionType),
+      reference: (first, second) => compareText(first.reference, second.reference),
+      invoice: (first, second) => compareText(first.invoiceNumber, second.invoiceNumber),
+      invoiceTotal: (first, second) => compareNumber(first.invoiceTotal, second.invoiceTotal),
+      invoicePaid: (first, second) => compareNumber(first.invoicePaid, second.invoicePaid),
+      invoiceDue: (first, second) => compareNumber(first.invoiceDue, second.invoiceDue),
+      paymentAmount: (first, second) => compareNumber(first.credit, second.credit),
+      balance: (first, second) => compareNumber(first.runningBalance, second.runningBalance),
+    }
+  );
+
+  const sortableHeadProps = (key: LedgerSortKey) => ({
+    active: sortConfig?.key === key,
+    direction: sortConfig?.key === key ? sortConfig.direction : undefined,
+    onSort: () => requestSort(key),
+  });
 
   const totals = useMemo(() => {
     const totalInvoiced = roundMoney(
@@ -403,7 +439,7 @@ export function CustomerLedgerDialog({
                     </div>
                   )}
                   {!isLoading &&
-                    rows.map((row) => (
+                    sortedRows.map((row) => (
                       <div key={row.id} className={`rounded-md border p-3 ${getRowClassName(row.transactionType)}`}>
                         <div className="flex items-center justify-between gap-2">
                           <Badge variant="outline">{row.transactionType}</Badge>
@@ -456,15 +492,15 @@ export function CustomerLedgerDialog({
                 <Table className="customer-ledger-print-table">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Reference</TableHead>
-                      <TableHead>Invoice</TableHead>
-                      <TableHead className="text-right">Invoice Total</TableHead>
-                      <TableHead className="text-right">Invoice Paid</TableHead>
-                      <TableHead className="text-right">Invoice Due</TableHead>
-                      <TableHead className="text-right">Payment Amount</TableHead>
-                      <TableHead className="text-right">Balance</TableHead>
+                      <SortableTableHead {...sortableHeadProps("date")}>Date</SortableTableHead>
+                      <SortableTableHead {...sortableHeadProps("type")}>Type</SortableTableHead>
+                      <SortableTableHead {...sortableHeadProps("reference")}>Reference</SortableTableHead>
+                      <SortableTableHead {...sortableHeadProps("invoice")}>Invoice</SortableTableHead>
+                      <SortableTableHead {...sortableHeadProps("invoiceTotal")} className="text-right" align="right">Invoice Total</SortableTableHead>
+                      <SortableTableHead {...sortableHeadProps("invoicePaid")} className="text-right" align="right">Invoice Paid</SortableTableHead>
+                      <SortableTableHead {...sortableHeadProps("invoiceDue")} className="text-right" align="right">Invoice Due</SortableTableHead>
+                      <SortableTableHead {...sortableHeadProps("paymentAmount")} className="text-right" align="right">Payment Amount</SortableTableHead>
+                      <SortableTableHead {...sortableHeadProps("balance")} className="text-right" align="right">Balance</SortableTableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -483,7 +519,7 @@ export function CustomerLedgerDialog({
                       </TableRow>
                     )}
                     {!isLoading &&
-                      rows.map((row) => (
+                      sortedRows.map((row) => (
                         <TableRow key={row.id} className={getRowClassName(row.transactionType)}>
                           <TableCell>{row.dateLabel}</TableCell>
                           <TableCell>

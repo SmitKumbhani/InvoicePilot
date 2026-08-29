@@ -12,21 +12,39 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { Button } from "@/components/ui/button";
 import { PlusCircle, Pencil } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { ItemDialog } from "./item-dialog";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { compareNumber, compareText, useSortableData } from "@/hooks/use-sortable-data";
 
 type ItemsClientProps = {
   items: Item[];
 };
+
+type ItemSortKey = "name" | "group" | "price";
 
 export function ItemsClient({ items: initialItems }: ItemsClientProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [items, setItems] = useState(initialItems);
   const isMobile = useIsMobile();
+  const { sortedData: sortedItems, sortConfig, requestSort } = useSortableData<Item, ItemSortKey>(
+    items,
+    {
+      name: (first, second) => compareText(first.name, second.name),
+      group: (first, second) => compareText(first.group_name, second.group_name),
+      price: (first, second) => compareNumber(first.price, second.price),
+    }
+  );
+
+  const sortableHeadProps = (key: ItemSortKey) => ({
+    active: sortConfig?.key === key,
+    direction: sortConfig?.key === key ? sortConfig.direction : undefined,
+    onSort: () => requestSort(key),
+  });
 
   useEffect(() => {
     setItems(initialItems);
@@ -56,7 +74,7 @@ export function ItemsClient({ items: initialItems }: ItemsClientProps) {
   ) : (
     isMobile ? (
       <div className="space-y-4">
-        {items.map((item) => (
+        {sortedItems.map((item) => (
           <Card key={item.id}>
             <CardHeader>
               <CardTitle>{item.name}</CardTitle>
@@ -86,14 +104,14 @@ export function ItemsClient({ items: initialItems }: ItemsClientProps) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Item Name</TableHead>
-                <TableHead>Group</TableHead>
-                <TableHead className="text-right">Sale Price</TableHead>
+                <SortableTableHead {...sortableHeadProps("name")}>Item Name</SortableTableHead>
+                <SortableTableHead {...sortableHeadProps("group")}>Group</SortableTableHead>
+                <SortableTableHead {...sortableHeadProps("price")} className="text-right" align="right">Sale Price</SortableTableHead>
                 <TableHead className="w-20 text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {items.map((item) => (
+              {sortedItems.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell className="font-medium">{item.name}</TableCell>
                   <TableCell>{item.group_name}</TableCell>

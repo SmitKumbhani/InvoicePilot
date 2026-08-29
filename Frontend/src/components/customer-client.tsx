@@ -5,6 +5,7 @@ import type { Invoice, Customer } from "@/lib/types";
 import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { formatCurrency, cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { Badge } from "./ui/badge";
@@ -28,6 +29,7 @@ import {
 import { useApi } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { compareDate, compareNumber, compareText, useSortableData } from "@/hooks/use-sortable-data";
 
 type CustomerWithPending = Customer & {
   pendingAmount: number;
@@ -51,8 +53,28 @@ const statusVariant: { [key in Invoice["status"]]: string } = {
     draft: "bg-gray-100 text-gray-800 dark:bg-gray-900/50 dark:text-gray-300",
   };
 
+type InvoiceSubSortKey = "invoiceNumber" | "issueDate" | "status" | "amountDue";
+
 function InvoiceSubTable({ invoices }: { invoices: Invoice[] }) {
     const router = useRouter();
+    const { sortedData: sortedInvoices, sortConfig, requestSort } = useSortableData<Invoice, InvoiceSubSortKey>(
+        invoices,
+        {
+            invoiceNumber: (first, second) => compareText(first.invoiceNumber, second.invoiceNumber),
+            issueDate: (first, second) => compareDate(first.issueDate, second.issueDate),
+            status: (first, second) => compareText(first.status, second.status),
+            amountDue: (first, second) =>
+                compareNumber(
+                    Math.max(first.total - first.amountPaid, 0),
+                    Math.max(second.total - second.amountPaid, 0)
+                ),
+        }
+    );
+    const sortableHeadProps = (key: InvoiceSubSortKey) => ({
+        active: sortConfig?.key === key,
+        direction: sortConfig?.key === key ? sortConfig.direction : undefined,
+        onSort: () => requestSort(key),
+    });
     const handleRowClick = (invoiceId: string) => {
         router.push(`/invoices/${invoiceId}`);
     };
@@ -60,14 +82,14 @@ function InvoiceSubTable({ invoices }: { invoices: Invoice[] }) {
         <Table>
             <TableHeader>
                 <TableRow>
-                    <TableHead>Invoice #</TableHead>
-                    <TableHead>Issue Date</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Amount Due</TableHead>
+                    <SortableTableHead {...sortableHeadProps("invoiceNumber")}>Invoice #</SortableTableHead>
+                    <SortableTableHead {...sortableHeadProps("issueDate")}>Issue Date</SortableTableHead>
+                    <SortableTableHead {...sortableHeadProps("status")}>Status</SortableTableHead>
+                    <SortableTableHead {...sortableHeadProps("amountDue")} className="text-right" align="right">Amount Due</SortableTableHead>
                 </TableRow>
             </TableHeader>
             <TableBody>
-                {invoices.map(invoice => (
+                {sortedInvoices.map(invoice => (
                     <TableRow key={invoice.id} className="cursor-pointer hover:bg-muted/50" onClick={() => handleRowClick(invoice.id)}>
                         <TableCell className="font-medium">{invoice.invoiceNumber}</TableCell>
                         <TableCell>{format(new Date(new Date(invoice.issueDate).toUTCString()), 'MMM d, yyyy')}</TableCell>
@@ -102,6 +124,8 @@ function CustomerBalance({ customer }: { customer: CustomerWithPending }) {
 
   return <span className="font-semibold">{formatCurrency(0)}</span>;
 }
+
+type CustomerSortKey = "name" | "phone" | "balance";
 
 function CustomerActions({
   customer,
@@ -173,6 +197,24 @@ export function CustomerClient({ customers, totals, onCustomerUpdate }: Customer
   const [isDeleting, setIsDeleting] = useState(false);
   const isMobile = useIsMobile();
   const [localCustomers, setLocalCustomers] = useState(customers);
+  const { sortedData: sortedCustomers, sortConfig, requestSort } = useSortableData<CustomerWithPending, CustomerSortKey>(
+    localCustomers,
+    {
+      name: (first, second) => compareText(first.name, second.name),
+      phone: (first, second) => compareText(first.phone, second.phone),
+      balance: (first, second) =>
+        compareNumber(
+          Math.max(first.pendingAmount || 0, 0) - Math.max(first.customerCredit || 0, 0),
+          Math.max(second.pendingAmount || 0, 0) - Math.max(second.customerCredit || 0, 0)
+        ),
+    }
+  );
+
+  const sortableHeadProps = (key: CustomerSortKey) => ({
+    active: sortConfig?.key === key,
+    direction: sortConfig?.key === key ? sortConfig.direction : undefined,
+    onSort: () => requestSort(key),
+  });
 
   useEffect(() => {
     setLocalCustomers(customers);
@@ -251,7 +293,7 @@ export function CustomerClient({ customers, totals, onCustomerUpdate }: Customer
             No customers found.
           </div>
         ) : (
-          localCustomers.map((customer) => (
+          sortedCustomers.map((customer) => (
             <React.Fragment key={customer.id}>
               <Card onClick={() => toggleCustomer(customer.id)} className="cursor-pointer">
                 <CardHeader>
@@ -317,14 +359,14 @@ export function CustomerClient({ customers, totals, onCustomerUpdate }: Customer
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50 hover:bg-muted/50">
-                <TableHead className="w-1/3">Customer</TableHead>
-                <TableHead>Phone</TableHead>
-                <TableHead className="text-right">Balance</TableHead>
+                <SortableTableHead {...sortableHeadProps("name")} className="w-1/3">Customer</SortableTableHead>
+                <SortableTableHead {...sortableHeadProps("phone")}>Phone</SortableTableHead>
+                <SortableTableHead {...sortableHeadProps("balance")} className="text-right" align="right">Balance</SortableTableHead>
                 <TableHead className="w-72 text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {localCustomers.map((customer) => (
+              {sortedCustomers.map((customer) => (
                 <React.Fragment key={customer.id}>
                   <TableRow onClick={() => toggleCustomer(customer.id)} className="cursor-pointer">
                     <TableCell className="font-medium">{customer.name}</TableCell>
