@@ -1,9 +1,10 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import type { Item } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -30,9 +31,21 @@ export function ItemsClient({ items: initialItems }: ItemsClientProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [items, setItems] = useState(initialItems);
+  
+  const [itemSearch, setItemSearch] = useState("");
+  const [groupSearch, setGroupSearch] = useState("");
+
+  const filteredItems = useMemo(() => {
+    return items.filter(item => {
+      const matchesItem = item.name.toLowerCase().includes(itemSearch.toLowerCase());
+      const matchesGroup = (item.group_name || "").toLowerCase().includes(groupSearch.toLowerCase());
+      return matchesItem && matchesGroup;
+    });
+  }, [items, itemSearch, groupSearch]);
+
   const isMobile = useIsMobile();
   const { sortedData: sortedItems, sortConfig, requestSort } = useSortableData<Item, ItemSortKey>(
-    items,
+    filteredItems,
     {
       name: (first, second) => compareText(first.name, second.name),
       group: (first, second) => compareText(first.group_name, second.group_name),
@@ -67,7 +80,7 @@ export function ItemsClient({ items: initialItems }: ItemsClientProps) {
     setIsDialogOpen(open);
   }
 
-  const itemsContent = items.length === 0 ? (
+  const itemsContent = sortedItems.length === 0 ? (
     <div className="text-center text-muted-foreground mt-8">
       No items found.
     </div>
@@ -134,10 +147,24 @@ export function ItemsClient({ items: initialItems }: ItemsClientProps) {
   );
 
   return (
-    <>
-      <div className="flex justify-end">
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto flex-1">
+          <Input 
+            placeholder="Search by item name..." 
+            value={itemSearch}
+            onChange={(e) => setItemSearch(e.target.value)}
+            className="max-w-xs"
+          />
+          <Input 
+            placeholder="Search by group..." 
+            value={groupSearch}
+            onChange={(e) => setGroupSearch(e.target.value)}
+            className="max-w-xs"
+          />
+        </div>
         <Button onClick={handleAdd}>
-          <PlusCircle />
+          <PlusCircle className="mr-2 h-4 w-4" />
           Add New Item
         </Button>
       </div>
@@ -148,6 +175,6 @@ export function ItemsClient({ items: initialItems }: ItemsClientProps) {
         onOpenChange={handleDialogClose} 
         item={selectedItem} 
       />
-    </>
+    </div>
   );
 }
