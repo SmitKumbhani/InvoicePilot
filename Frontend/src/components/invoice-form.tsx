@@ -248,7 +248,9 @@ export function InvoiceForm({ invoice, customers, items, onItemFocus, onCustomer
                 control={form.control}
                 name={`lineItems.${index}.group_name`}
                 render={({ field: controllerField }) => (
-                  <FormItem className="col-span-3">
+                  <div className="col-span-3 flex items-center gap-2 pt-1">
+                    <span className="text-sm font-medium text-muted-foreground w-4 shrink-0 text-right">{index + 1}.</span>
+                    <FormItem className="flex-1">
                     <Select
                       onValueChange={(value) =>
                         handleGroupChange(index, value, controllerField.onChange)
@@ -269,6 +271,7 @@ export function InvoiceForm({ invoice, customers, items, onItemFocus, onCustomer
                       </SelectContent>
                     </Select>
                   </FormItem>
+                  </div>
                 )}
               />
               <Controller

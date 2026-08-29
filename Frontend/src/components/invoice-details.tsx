@@ -76,6 +76,7 @@ export function InvoiceDetails({
             <Table>
                 <TableHeader>
                     <TableRow>
+                        <TableHead className="w-12 text-center">#</TableHead>
                         <SortableTableHead {...sortableHeadProps("group")}>Group</SortableTableHead>
                         <SortableTableHead {...sortableHeadProps("description")}>Description</SortableTableHead>
                         <SortableTableHead {...sortableHeadProps("quantity")} className="text-center" align="center">Quantity</SortableTableHead>
@@ -86,6 +87,7 @@ export function InvoiceDetails({
                 <TableBody>
                     {sortedLineItems.map((item, index) => (
                         <TableRow key={item.id ?? index} onFocus={() => onItemFocus?.(item.itemId ?? null)} onClick={() => onItemFocus?.(item.itemId ?? null)} className="cursor-pointer">
+                            <TableCell className="text-center text-muted-foreground">{index + 1}</TableCell>
                             <TableCell>{item.group_name || 'N/A'}</TableCell>
                             <TableCell className="font-medium">{item.description}</TableCell>
                             <TableCell className="text-center">{item.quantity}</TableCell>
