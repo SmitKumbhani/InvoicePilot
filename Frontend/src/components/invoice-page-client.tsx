@@ -14,14 +14,10 @@ import { InvoicePrintInterceptorDialog } from "./invoice-print-interceptor-dialo
 export function InvoicePageClient({
   invoice: initialInvoice,
   previousBalanceDue,
-  customers,
-  items,
   printMode = "full",
 }: {
   invoice: Invoice;
   previousBalanceDue: number;
-  customers: Customer[];
-  items: Item[];
   printMode?: "full" | "invoice-only";
 }) {
   const [invoice, setInvoice] = useState(initialInvoice);

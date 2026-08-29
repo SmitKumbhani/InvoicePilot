@@ -2,8 +2,10 @@ import { getCustomers, getItems } from "@/lib/actions";
 import { InvoiceCreator } from "@/components/invoice-creator";
 
 export default async function NewInvoicePage() {
-  const customers = await getCustomers();
-  const items = await getItems();
+  const [customers, items] = await Promise.all([
+    getCustomers(),
+    getItems()
+  ]);
 
   return <InvoiceCreator customers={customers} items={items} />;
 }

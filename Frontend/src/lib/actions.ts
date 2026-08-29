@@ -227,9 +227,14 @@ const normalizeSingleCustomerPayment = (
 };
 
 export async function getInvoices(
-  status?: "all" | Invoice["status"]
+  status?: "all" | Invoice["status"],
+  customerId?: string
 ): Promise<Invoice[]> {
-  const res = await fetch(`${API_BASE_URL}/invoices`);
+  const url = new URL(`${API_BASE_URL}/invoices`);
+  if (customerId) {
+    url.searchParams.append("customerId", customerId);
+  }
+  const res = await fetch(url.toString());
   if (!res.ok) {
     throw new Error("Failed to fetch invoices");
   }

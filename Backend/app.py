@@ -871,10 +871,11 @@ def fetch_invoice_details(cur, invoice_id):
 @app.route('/api/invoices', methods=['GET'])
 def get_invoices():
     try:
+        customer_id = request.args.get('customerId')
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute(
-            '''
+        
+        query = '''
             SELECT
                 i.id,
                 i.invoice_number,
@@ -889,9 +890,15 @@ def get_invoices():
                 i.updated_at
             FROM invoices i
             JOIN customers c ON i.customer_id = c.id
-            ORDER BY i.created_at DESC, i.issue_date DESC, i.id DESC;
-            '''
-        )
+        '''
+        params = []
+        if customer_id:
+            query += ' WHERE i.customer_id = %s'
+            params.append(customer_id)
+            
+        query += ' ORDER BY i.created_at DESC, i.issue_date DESC, i.id DESC;'
+        
+        cur.execute(query, tuple(params))
         invoices = cur.fetchall()
         cur.close()
         conn.close()
