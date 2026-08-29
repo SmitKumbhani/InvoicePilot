@@ -64,6 +64,7 @@ export function InvoiceForm({ customers, items, onItemFocus, onCustomerChange }:
   const router = useRouter();
   const { createInvoice } = useApi();
   const { showLoader, hideLoader } = useLoader();
+  const [lastSelectedGroupName, setLastSelectedGroupName] = useState("");
 
   const form = useForm<InvoiceFormValues>({
     resolver: zodResolver(invoiceSchema),
@@ -93,6 +94,22 @@ export function InvoiceForm({ customers, items, onItemFocus, onCustomerChange }:
   const itemsByGroup = (group_name?: string) => {
     if (!group_name) return [];
     return items.filter(item => (item.group_name || "Uncategorized") === group_name);
+  };
+
+  const handleGroupChange = (index: number, value: string, onChange: (value: string) => void) => {
+    onChange(value);
+    setLastSelectedGroupName(value);
+
+    const selectedItemId = form.getValues(`lineItems.${index}.itemId`);
+    const selectedItem = items.find((item) => item.id === selectedItemId);
+    const selectedItemGroup = selectedItem?.group_name || "Uncategorized";
+
+    if (selectedItem && selectedItemGroup !== value) {
+      form.setValue(`lineItems.${index}.itemId`, "");
+      form.setValue(`lineItems.${index}.description`, "");
+      form.setValue(`lineItems.${index}.unitPrice`, 0);
+      onItemFocus(null);
+    }
   };
 
   const onSubmit = async (data: InvoiceFormValues) => {
@@ -207,7 +224,12 @@ export function InvoiceForm({ customers, items, onItemFocus, onCustomerChange }:
                 name={`lineItems.${index}.group_name`}
                 render={({ field: controllerField }) => (
                   <FormItem className="col-span-3">
-                    <Select onValueChange={controllerField.onChange} defaultValue={controllerField.value}>
+                    <Select
+                      onValueChange={(value) =>
+                        handleGroupChange(index, value, controllerField.onChange)
+                      }
+                      value={controllerField.value}
+                    >
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Select group" />
@@ -243,7 +265,7 @@ export function InvoiceForm({ customers, items, onItemFocus, onCustomerChange }:
                         );
                         onItemFocus(value);
                       }}
-                      defaultValue={controllerField.value}
+                      value={controllerField.value}
                       disabled={!watchedLineItems[index]?.group_name}
                     >
                       <FormControl>
@@ -302,7 +324,13 @@ export function InvoiceForm({ customers, items, onItemFocus, onCustomerChange }:
             variant="outline"
             size="sm"
             onClick={() =>
-              append({ itemId: "", description: "", quantity: 1, unitPrice: 0, group_name: "" })
+              append({
+                itemId: "",
+                description: "",
+                quantity: 1,
+                unitPrice: 0,
+                group_name: lastSelectedGroupName,
+              })
             }
           >
             <PlusCircle className="mr-2 h-4 w-4" /> Add Item
