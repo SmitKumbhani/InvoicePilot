@@ -275,7 +275,7 @@ export function InvoiceForm({ invoice, customers, items, onItemFocus, onCustomer
                 control={form.control}
                 name={`lineItems.${index}.itemId`}
                 render={({ field: controllerField }) => (
-                  <FormItem className="col-span-4">
+                  <FormItem className="col-span-3">
                     <Select
                       onValueChange={(value) => {
                         controllerField.onChange(value);
@@ -331,7 +331,10 @@ export function InvoiceForm({ invoice, customers, items, onItemFocus, onCustomer
                   </FormItem>
                 )}
               />
-              <div className="col-span-2 flex items-center justify-end pt-1">
+              <div className="col-span-2 flex items-center pt-2 px-2 text-sm text-muted-foreground font-medium">
+                {formatCurrency((watchedLineItems[index]?.quantity || 0) * (watchedLineItems[index]?.unitPrice || 0))}
+              </div>
+              <div className="col-span-1 flex items-center justify-end pt-1">
                  <Button
                   type="button"
                   variant="ghost"

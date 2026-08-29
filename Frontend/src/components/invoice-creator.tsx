@@ -20,8 +20,8 @@ export function InvoiceCreator({ invoice, customers, items }: InvoiceCreatorProp
 
 
   return (
-    <div className="grid lg:grid-cols-5 gap-8">
-      <div className="lg:col-span-3">
+    <div className="grid lg:grid-cols-3 gap-8">
+      <div className="lg:col-span-2">
         <Card>
             <CardHeader>
                 <CardTitle className="font-headline">{invoice ? `Edit Invoice ${invoice.invoiceNumber}` : "Create Invoice"}</CardTitle>
@@ -39,7 +39,7 @@ export function InvoiceCreator({ invoice, customers, items }: InvoiceCreatorProp
         </Card>
       </div>
       {!isMobile && (
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-1">
             <PriceHistoryPanel itemId={selectedItemId} customerId={selectedCustomerId}/>
         </div>
       )}

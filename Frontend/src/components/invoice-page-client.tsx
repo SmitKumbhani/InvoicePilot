@@ -58,8 +58,8 @@ export function InvoicePageClient({
                 </Button>
               </div>
           </div>
-        <div className="grid lg:grid-cols-5 gap-8">
-            <div className="lg:col-span-3">
+        <div className="grid lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2">
                 <InvoiceDetails
                   invoice={invoice}
                   previousBalanceDue={previousBalanceDue}
@@ -68,7 +68,7 @@ export function InvoicePageClient({
                 />
             </div>
             {!isMobile && (
-                <div className="lg:col-span-2 no-print">
+                <div className="lg:col-span-1 no-print">
                     <PriceHistoryPanel itemId={selectedItemId} customerId={invoice.customerId} />
                 </div>
             )}
