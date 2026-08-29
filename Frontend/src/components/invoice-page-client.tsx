@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, Pencil, Printer } from "lucide-react";
 import { PriceHistoryPanel } from "@/components/price-history-panel";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { InvoiceEditDialog } from "./invoice-edit-dialog";
 import { InvoicePrintInterceptorDialog } from "./invoice-print-interceptor-dialog";
 
 export function InvoicePageClient({
@@ -27,7 +26,6 @@ export function InvoicePageClient({
 }) {
   const [invoice, setInvoice] = useState(initialInvoice);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
   const isMobile = useIsMobile();
 
@@ -52,9 +50,11 @@ export function InvoicePageClient({
                   </div>
               </div>
               <div className="flex items-center gap-2">
-                <Button variant="outline" onClick={() => setIsEditDialogOpen(true)} className="no-print">
-                  <Pencil />
-                  Edit Invoice
+                <Button variant="outline" asChild className="no-print">
+                  <Link href={`/invoices/${invoice.id}/edit`}>
+                    <Pencil />
+                    Edit Invoice
+                  </Link>
                 </Button>
                 <Button onClick={() => setIsPrintDialogOpen(true)} className="no-print">
                   <Printer />
@@ -78,14 +78,6 @@ export function InvoicePageClient({
             )}
         </div>
       </div>
-      <InvoiceEditDialog
-        open={isEditDialogOpen}
-        onOpenChange={setIsEditDialogOpen}
-        invoice={invoice}
-        customers={customers}
-        items={items}
-        onInvoiceUpdated={setInvoice}
-      />
       <InvoicePrintInterceptorDialog
         open={isPrintDialogOpen}
         onOpenChange={setIsPrintDialogOpen}

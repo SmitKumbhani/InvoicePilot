@@ -1,6 +1,6 @@
 
 "use client";
-import type { Customer, Item } from "@/lib/types";
+import type { Customer, Item, Invoice } from "@/lib/types";
 import { useState } from "react";
 import { InvoiceForm } from "./invoice-form";
 import { PriceHistoryPanel } from "./price-history-panel";
@@ -8,13 +8,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./ui/
 import { useIsMobile } from "@/hooks/use-mobile";
 
 type InvoiceCreatorProps = {
+  invoice?: Invoice;
   customers: Customer[];
   items: Item[];
 };
 
-export function InvoiceCreator({ customers, items }: InvoiceCreatorProps) {
+export function InvoiceCreator({ invoice, customers, items }: InvoiceCreatorProps) {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(invoice?.customerId || null);
   const isMobile = useIsMobile();
 
 
@@ -23,11 +24,12 @@ export function InvoiceCreator({ customers, items }: InvoiceCreatorProps) {
       <div className="lg:col-span-3">
         <Card>
             <CardHeader>
-                <CardTitle className="font-headline">Create Invoice</CardTitle>
-                <CardDescription>Fill out the details below to generate a new invoice.</CardDescription>
+                <CardTitle className="font-headline">{invoice ? `Edit Invoice ${invoice.invoiceNumber}` : "Create Invoice"}</CardTitle>
+                <CardDescription>{invoice ? "Update the details below to save changes." : "Fill out the details below to generate a new invoice."}</CardDescription>
             </CardHeader>
             <CardContent>
                 <InvoiceForm
+                    invoice={invoice}
                     customers={customers}
                     items={items}
                     onItemFocus={setSelectedItemId}

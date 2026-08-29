@@ -30,7 +30,7 @@ import {
 import { CalendarIcon, PlusCircle, Trash2 } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import { format } from "date-fns";
-import type { Customer, Item } from "@/lib/types";
+import type { Customer, Item, Invoice } from "@/lib/types";
 import { useApi } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
@@ -53,25 +53,32 @@ const invoiceSchema = z.object({
 type InvoiceFormValues = z.infer<typeof invoiceSchema>;
 
 type InvoiceFormProps = {
+  invoice?: Invoice;
   customers: Customer[];
   items: Item[];
   onItemFocus: (itemId: string | null) => void;
   onCustomerChange: (customerId: string | null) => void;
 };
 
-export function InvoiceForm({ customers, items, onItemFocus, onCustomerChange }: InvoiceFormProps) {
+export function InvoiceForm({ invoice, customers, items, onItemFocus, onCustomerChange }: InvoiceFormProps) {
   const { toast } = useToast();
   const router = useRouter();
-  const { createInvoice } = useApi();
+  const { createInvoice, updateInvoice } = useApi();
   const { showLoader, hideLoader } = useLoader();
   const [lastSelectedGroupName, setLastSelectedGroupName] = useState("");
 
   const form = useForm<InvoiceFormValues>({
     resolver: zodResolver(invoiceSchema),
     defaultValues: {
-      customerId: "",
-      issueDate: new Date(),
-      lineItems: [],
+      customerId: invoice?.customerId || "",
+      issueDate: invoice ? new Date(invoice.issueDate) : new Date(),
+      lineItems: invoice?.lineItems.map(item => ({
+        itemId: item.itemId ?? "",
+        group_name: item.group_name ?? "",
+        description: item.description,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+      })) || [],
     },
   });
 
@@ -120,23 +127,36 @@ export function InvoiceForm({ customers, items, onItemFocus, onCustomerChange }:
   const onSubmit = async (data: InvoiceFormValues) => {
     showLoader();
     try {
-      const newInvoiceData = {
-        customerId: data.customerId,
-        issueDate: data.issueDate.toUTCString(),
-        lineItems: data.lineItems,
-        status: "pending" as const,
-      };
-      await createInvoice(newInvoiceData);
-      toast({
-        title: "Success",
-        description: "Invoice created successfully.",
-      });
-      router.push("/");
+      if (invoice) {
+        await updateInvoice(invoice.id, {
+          customerId: data.customerId,
+          issueDate: data.issueDate.toUTCString(),
+          lineItems: data.lineItems,
+        });
+        toast({
+          title: "Success",
+          description: "Invoice updated successfully.",
+        });
+        router.push(`/invoices/${invoice.id}`);
+      } else {
+        const newInvoiceData = {
+          customerId: data.customerId,
+          issueDate: data.issueDate.toUTCString(),
+          lineItems: data.lineItems,
+          status: "pending" as const,
+        };
+        await createInvoice(newInvoiceData);
+        toast({
+          title: "Success",
+          description: "Invoice created successfully.",
+        });
+        router.push("/");
+      }
     } catch (error) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to create invoice.",
+        description: invoice ? "Failed to update invoice." : "Failed to create invoice.",
       });
     } finally {
       hideLoader();
