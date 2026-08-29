@@ -88,7 +88,12 @@ export function InvoiceForm({ customers, items, onItemFocus, onCustomerChange }:
 
   const itemGroups = useMemo(() => {
     const groups = new Set(items.map(item => item.group_name || "Uncategorized"));
-    return Array.from(groups);
+    return Array.from(groups).sort((first, second) =>
+      first.localeCompare(second, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      })
+    );
   }, [items]);
 
   const itemsByGroup = (group_name?: string) => {
