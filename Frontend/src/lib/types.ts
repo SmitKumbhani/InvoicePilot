@@ -102,3 +102,20 @@ export type UpdateCustomerPaymentInput = {
   paymentDate: string;
   note?: string;
 };
+
+export type SaleItem = {
+  id: string;
+  issueDate: string;
+  status: InvoiceStatus;
+  customerId: string;
+  customerName: string;
+  itemId: string | null;
+  itemName: string;
+  groupName: string | null;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  totalAmount: number;
+  invoiceId: string;
+  invoiceNumber: string;
+};

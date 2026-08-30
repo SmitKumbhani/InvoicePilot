@@ -15,6 +15,7 @@ import type {
   CustomerPaymentsResponse,
   CreateCustomerPaymentInput,
   UpdateCustomerPaymentInput,
+  SaleItem,
 } from "./types";
 
 const API_BASE_URL = "http://backend:5001/api";
@@ -577,4 +578,18 @@ export async function deleteInvoice(invoiceId: string) {
   revalidatePath("/customers");
   
   return { success: true };
+}
+
+export async function getSales(): Promise<SaleItem[]> {
+  const res = await fetch(`${API_BASE_URL}/sales`, { cache: 'no-store' });
+  if (!res.ok) {
+    throw new Error("Failed to fetch sales");
+  }
+  const payload = await res.json();
+  return Array.isArray(payload) ? payload.map((sale: any) => ({
+    ...sale,
+    quantity: toNumber(sale.quantity),
+    unitPrice: toNumber(sale.unitPrice),
+    totalAmount: toNumber(sale.totalAmount)
+  })) : [];
 }

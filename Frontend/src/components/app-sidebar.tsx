@@ -8,9 +8,14 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
 } from "@/components/ui/sidebar";
-import { BookCopy, FilePlus, Bird, Users, Package } from "lucide-react";
+import { BookCopy, FilePlus, Bird, Users, Package, LayoutDashboard } from "lucide-react";
 
 const menuItems = [
+  {
+    href: "/dashboard",
+    label: "Dashboard",
+    icon: LayoutDashboard,
+  },
   {
     href: "/",
     label: "Ledger",

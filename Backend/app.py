@@ -869,6 +869,64 @@ def fetch_invoice_details(cur, invoice_id):
         } for li in line_items]
     }
 
+@app.route('/api/sales', methods=['GET'])
+def get_sales():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        query = '''
+            SELECT
+                li.id,
+                i.issue_date,
+                i.status,
+                c.id as customer_id,
+                c.name as customer_name,
+                li.item_id,
+                it.name as item_name,
+                li.group_name,
+                li.description,
+                li.quantity,
+                li.unit_price,
+                (li.quantity * li.unit_price) as total_amount,
+                i.id as invoice_id,
+                i.invoice_number
+            FROM line_items li
+            JOIN invoices i ON li.invoice_id = i.id
+            JOIN customers c ON i.customer_id = c.id
+            LEFT JOIN items it ON li.item_id = it.id
+            ORDER BY i.issue_date DESC, i.id DESC;
+        '''
+        
+        cur.execute(query)
+        sales = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        sales_list = []
+        for row in sales:
+            sales_list.append({
+                "id": row[0],
+                "issueDate": row[1],
+                "status": row[2],
+                "customerId": row[3],
+                "customerName": row[4],
+                "itemId": row[5],
+                "itemName": row[6] or row[8], # fallback to description if item_name is null
+                "groupName": row[7],
+                "description": row[8],
+                "quantity": row[9],
+                "unitPrice": row[10],
+                "totalAmount": row[11],
+                "invoiceId": row[12],
+                "invoiceNumber": row[13]
+            })
+            
+        return jsonify(sales_list)
+    except Exception as e:
+        print(e)
+        return internal_error(e)
+
 @app.route('/api/invoices', methods=['GET'])
 def get_invoices():
     try:
