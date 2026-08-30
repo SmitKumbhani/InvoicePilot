@@ -6,7 +6,7 @@ from threading import Lock
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import psycopg2
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 app = Flask(__name__)
 CORS(app)
@@ -446,7 +446,8 @@ def determine_invoice_status(total, amount_paid, unpaid_status='pending'):
     return 'partially-paid'
 
 def calculate_invoice_total(line_items):
-    return sum((item['quantity'] * item['unitPrice'] for item in line_items), Decimal('0'))
+    total = sum((item['quantity'] * item['unitPrice'] for item in line_items), Decimal('0'))
+    return total.quantize(Decimal('1'), rounding=ROUND_HALF_UP)
 
 def parse_decimal_amount(value, field_name):
     try:

@@ -88,10 +88,11 @@ export function InvoiceForm({ invoice, customers, items, onItemFocus, onCustomer
   });
 
   const watchedLineItems = form.watch("lineItems");
-  const total = watchedLineItems.reduce(
+  const rawTotal = watchedLineItems.reduce(
     (acc, item) => acc + (item.quantity || 0) * (item.unitPrice || 0),
     0
   );
+  const total = Math.round(rawTotal);
 
   const itemGroups = useMemo(() => {
     const groups = new Set(items.map(item => item.group_name || "Uncategorized"));
