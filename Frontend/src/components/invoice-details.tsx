@@ -33,6 +33,7 @@ export function InvoiceDetails({
   totalsMode = "full",
   onItemFocus,
 }: InvoiceDetailsProps) {
+  const totalQuantity = invoice.lineItems.reduce((sum, item) => sum + item.quantity, 0);
   const totalDue = invoice.total + previousBalanceDue;
   const grandTotalDue = totalDue - invoice.amountPaid;
   const { sortedData: sortedLineItems, sortConfig, requestSort } = useSortableData<LineItem, LineItemSortKey>(
@@ -97,6 +98,11 @@ export function InvoiceDetails({
                     ))}
                 </TableBody>
             </Table>
+            <div className="flex items-center justify-between px-1 pt-3 pb-1 text-sm text-muted-foreground">
+              <span>
+                Total Items: <span className="font-medium text-foreground">{totalQuantity}</span>
+              </span>
+            </div>
             <Separator className="my-4"/>
             <div className="flex justify-end">
                 <div className="w-full max-w-sm space-y-2">
