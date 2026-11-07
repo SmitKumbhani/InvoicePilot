@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/popover";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { SearchableCombobox, type ComboboxOption } from "@/components/ui/searchable-combobox";
 
 type DashboardClientProps = {
   sales: SaleItem[];
@@ -158,35 +159,79 @@ export function DashboardClient({ sales, customers, items }: DashboardClientProp
 
             <div className="space-y-2">
               <Label>Customer</Label>
-              <Select value={draftCustomer} onValueChange={setDraftCustomer}>
-                <SelectTrigger><SelectValue placeholder="All Customers" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Customers</SelectItem>
-                  {customers.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <SearchableCombobox
+                value={draftCustomer}
+                displayValue={
+                  draftCustomer === "all"
+                    ? "All Customers"
+                    : customers.find((c) => c.id === draftCustomer)?.name || "All Customers"
+                }
+                onSelect={(val) => setDraftCustomer(val)}
+                searchFn={async (query) => {
+                  const q = query.toLowerCase();
+                  const options: ComboboxOption[] = [
+                    { value: "all", label: "All Customers" },
+                  ];
+                  const filtered = customers
+                    .filter((c) => c.name.toLowerCase().includes(q))
+                    .map((c) => ({ value: c.id, label: c.name }));
+                  return [...options, ...filtered];
+                }}
+                placeholder="All Customers"
+                searchPlaceholder="Search customers..."
+              />
             </div>
 
             <div className="space-y-2">
               <Label>Item Group</Label>
-              <Select value={draftGroup} onValueChange={setDraftGroup}>
-                <SelectTrigger><SelectValue placeholder="All Groups" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Groups</SelectItem>
-                  {itemGroups.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <SearchableCombobox
+                value={draftGroup}
+                displayValue={draftGroup === "all" ? "All Groups" : draftGroup}
+                onSelect={(val) => setDraftGroup(val)}
+                searchFn={async (query) => {
+                  const q = query.toLowerCase();
+                  const options: ComboboxOption[] = [
+                    { value: "all", label: "All Groups" },
+                  ];
+                  const filtered = itemGroups
+                    .filter((g) => g.toLowerCase().includes(q))
+                    .map((g) => ({ value: g, label: g }));
+                  return [...options, ...filtered];
+                }}
+                placeholder="All Groups"
+                searchPlaceholder="Search groups..."
+              />
             </div>
 
             <div className="space-y-2">
               <Label>Item Name</Label>
-              <Select value={draftItem} onValueChange={setDraftItem}>
-                <SelectTrigger><SelectValue placeholder="All Items" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Items</SelectItem>
-                  {items.map(i => <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <SearchableCombobox
+                value={draftItem}
+                displayValue={
+                  draftItem === "all"
+                    ? "All Items"
+                    : items.find((i) => i.id === draftItem)?.name || "All Items"
+                }
+                onSelect={(val) => setDraftItem(val)}
+                searchFn={async (query) => {
+                  const q = query.toLowerCase();
+                  const options: ComboboxOption[] = [
+                    { value: "all", label: "All Items" },
+                  ];
+                  const groupFiltered =
+                    draftGroup && draftGroup !== "all"
+                      ? items.filter(
+                          (i) => (i.group_name || "Uncategorized") === draftGroup
+                        )
+                      : items;
+                  const filtered = groupFiltered
+                    .filter((i) => i.name.toLowerCase().includes(q))
+                    .map((i) => ({ value: i.id, label: i.name }));
+                  return [...options, ...filtered];
+                }}
+                placeholder="All Items"
+                searchPlaceholder="Search items..."
+              />
             </div>
 
             <div className="space-y-2">

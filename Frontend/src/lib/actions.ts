@@ -593,3 +593,26 @@ export async function getSales(): Promise<SaleItem[]> {
     totalAmount: toNumber(sale.totalAmount)
   })) : [];
 }
+
+export async function searchCustomers(query: string): Promise<Customer[]> {
+  const url = new URL(`${API_BASE_URL}/customers/search`);
+  if (query) url.searchParams.append("q", query);
+  const res = await fetch(url.toString());
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function searchItems(query: string, group?: string): Promise<Item[]> {
+  const url = new URL(`${API_BASE_URL}/items/search`);
+  if (query) url.searchParams.append("q", query);
+  if (group) url.searchParams.append("group", group);
+  const res = await fetch(url.toString());
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function getItemGroups(): Promise<string[]> {
+  const res = await fetch(`${API_BASE_URL}/items/groups`);
+  if (!res.ok) return [];
+  return res.json();
+}

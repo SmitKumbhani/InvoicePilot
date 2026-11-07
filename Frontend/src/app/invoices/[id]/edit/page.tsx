@@ -1,4 +1,4 @@
-import { getCustomers, getItems, getInvoiceById } from "@/lib/actions";
+import { getInvoiceById } from "@/lib/actions";
 import { InvoiceCreator } from "@/components/invoice-creator";
 import { notFound } from "next/navigation";
 
@@ -14,7 +14,5 @@ export default async function EditInvoicePage({
     notFound();
   }
 
-  const [customers, items] = await Promise.all([getCustomers(), getItems()]);
-
-  return <InvoiceCreator invoice={invoice} customers={customers} items={items} />;
+  return <InvoiceCreator invoice={invoice} />;
 }

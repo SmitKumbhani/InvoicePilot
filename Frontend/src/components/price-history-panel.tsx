@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
-import { useApi } from "@/lib/api";
+import { useEffect, useState, useRef } from "react";
+import { getItemPriceHistory } from "@/lib/actions";
 import type { PriceHistoryEntry } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,7 +17,9 @@ export function PriceHistoryPanel({ itemId, customerId }: { itemId: string | nul
   const [history, setHistory] = useState<PriceHistoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [itemName, setItemName] = useState<string>("");
-  const { getItemPriceHistory } = useApi();
+  // Call server action directly — NOT through useApi() — to avoid triggering
+  // the global full-screen LoadingOverlay on every item focus/selection.
+  const fetchIdRef = useRef(0);
   const { sortedData: sortedHistory, sortConfig, requestSort } = useSortableData<PriceHistoryEntry, PriceHistorySortKey>(
     history,
     {
@@ -34,9 +36,12 @@ export function PriceHistoryPanel({ itemId, customerId }: { itemId: string | nul
 
   useEffect(() => {
     if (itemId && customerId) {
+      const currentFetchId = ++fetchIdRef.current;
       setLoading(true);
       getItemPriceHistory(itemId, customerId)
         .then((data) => {
+          // Only apply if this is still the latest request (prevents stale responses)
+          if (currentFetchId !== fetchIdRef.current) return;
           setHistory(data);
           if (data.length > 0) {
             setItemName(data[0].itemName);
@@ -44,7 +49,11 @@ export function PriceHistoryPanel({ itemId, customerId }: { itemId: string | nul
             setItemName("");
           }
         })
-        .finally(() => setLoading(false));
+        .finally(() => {
+          if (currentFetchId === fetchIdRef.current) {
+            setLoading(false);
+          }
+        });
     } else {
       setHistory([]);
       setItemName("");

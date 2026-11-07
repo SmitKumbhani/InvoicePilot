@@ -20,12 +20,11 @@ payment_schema_migration_last_attempt = 0.0
 
 @app.before_request
 def log_request_info():
-    app.logger.info('Headers: %s', request.headers)
-    app.logger.info('Body: %s', request.get_data())
+    app.logger.info('Request: %s %s', request.method, request.path)
 
 @app.after_request
 def log_response_info(response):
-    app.logger.info('Response: %s', response.get_data())
+    app.logger.info('Response: %s %s', response.status_code, request.path)
     return response
 
 
@@ -349,6 +348,35 @@ def delete_customer(customer_id):
         return internal_error(e)
 
 
+@app.route('/api/customers/search', methods=['GET'])
+def search_customers():
+    try:
+        query = request.args.get('q', '').strip()
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        if query:
+            cur.execute(
+                '''SELECT id, name, phone FROM customers
+                   WHERE name ILIKE %s OR phone ILIKE %s
+                   ORDER BY name ASC LIMIT 20;''',
+                (f'%{query}%', f'%{query}%')
+            )
+        else:
+            cur.execute('SELECT id, name, phone FROM customers ORDER BY name ASC LIMIT 20;')
+
+        customers = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        return jsonify([{
+            "id": c[0], "name": c[1], "phone": c[2]
+        } for c in customers])
+    except Exception as e:
+        print(e)
+        return internal_error(e)
+
+
 # -- Item & Price Management --
 
 @app.route('/api/items', methods=['GET'])
@@ -429,6 +457,60 @@ def update_item(item_id):
             return jsonify({'id': str(item_id), 'name': name, 'group_name': group_name, 'price': price})
         else:
             return jsonify({'error': 'Item not found'}), 404
+    except Exception as e:
+        print(e)
+        return internal_error(e)
+
+
+@app.route('/api/items/search', methods=['GET'])
+def search_items():
+    try:
+        query = request.args.get('q', '').strip()
+        group = request.args.get('group', '').strip()
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        conditions = []
+        params = []
+
+        if query:
+            conditions.append('name ILIKE %s')
+            params.append(f'%{query}%')
+        if group:
+            if group == 'Uncategorized':
+                conditions.append("(group_name IS NULL OR group_name = '')")
+            else:
+                conditions.append('group_name = %s')
+                params.append(group)
+
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ''
+        cur.execute(
+            f'SELECT id, name, group_name, price FROM items {where} ORDER BY name ASC LIMIT 20;',
+            tuple(params)
+        )
+
+        items = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        return jsonify([{
+            "id": i[0], "name": i[1], "group_name": i[2], "price": i[3]
+        } for i in items])
+    except Exception as e:
+        print(e)
+        return internal_error(e)
+
+
+@app.route('/api/items/groups', methods=['GET'])
+def get_item_groups():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT DISTINCT COALESCE(NULLIF(group_name, ''), 'Uncategorized') as grp FROM items ORDER BY grp ASC;")
+        groups = cur.fetchall()
+        cur.close()
+        conn.close()
+        return jsonify([g[0] for g in groups])
     except Exception as e:
         print(e)
         return internal_error(e)

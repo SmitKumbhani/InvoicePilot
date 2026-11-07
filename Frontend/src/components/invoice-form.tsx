@@ -3,7 +3,7 @@
 import { useForm, useFieldArray, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { useState, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Form,
   FormControl,
@@ -14,13 +14,6 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import {
   Popover,
@@ -30,11 +23,13 @@ import {
 import { CalendarIcon, PlusCircle, Trash2 } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import { format } from "date-fns";
-import type { Customer, Item, Invoice } from "@/lib/types";
+import type { Invoice } from "@/lib/types";
 import { useApi } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 import { useLoader } from "@/hooks/use-loader";
+import { SearchableCombobox, type ComboboxOption } from "@/components/ui/searchable-combobox";
+import { searchCustomers, searchItems, getItemGroups } from "@/lib/actions";
 
 const lineItemSchema = z.object({
   itemId: z.string().min(1, "Item is required."),
@@ -54,18 +49,41 @@ type InvoiceFormValues = z.infer<typeof invoiceSchema>;
 
 type InvoiceFormProps = {
   invoice?: Invoice;
-  customers: Customer[];
-  items: Item[];
   onItemFocus: (itemId: string | null) => void;
   onCustomerChange: (customerId: string | null) => void;
 };
 
-export function InvoiceForm({ invoice, customers, items, onItemFocus, onCustomerChange }: InvoiceFormProps) {
+export function InvoiceForm({ invoice, onItemFocus, onCustomerChange }: InvoiceFormProps) {
   const { toast } = useToast();
   const router = useRouter();
   const { createInvoice, updateInvoice } = useApi();
   const { showLoader, hideLoader } = useLoader();
   const [lastSelectedGroupName, setLastSelectedGroupName] = useState("");
+
+  // Display values for combobox selections (not stored in form, only for UI display)
+  const [customerDisplayName, setCustomerDisplayName] = useState(
+    invoice?.customer.name || ""
+  );
+  // Track display values per line item field index
+  const [lineItemDisplays, setLineItemDisplays] = useState<
+    Record<number, { groupName: string; itemName: string }>
+  >(() => {
+    if (!invoice?.lineItems) return {};
+    const initial: Record<number, { groupName: string; itemName: string }> = {};
+    invoice.lineItems.forEach((item, idx) => {
+      initial[idx] = {
+        groupName: item.group_name || "",
+        itemName: item.description || item.itemName || "",
+      };
+    });
+    return initial;
+  });
+
+  // Cache item groups (small dataset, loaded once)
+  const [allGroups, setAllGroups] = useState<string[]>([]);
+  useEffect(() => {
+    getItemGroups().then(setAllGroups);
+  }, []);
 
   const form = useForm<InvoiceFormValues>({
     resolver: zodResolver(invoiceSchema),
@@ -94,35 +112,95 @@ export function InvoiceForm({ invoice, customers, items, onItemFocus, onCustomer
   );
   const total = Math.round(rawTotal);
 
-  const itemGroups = useMemo(() => {
-    const groups = new Set(items.map(item => item.group_name || "Uncategorized"));
-    return Array.from(groups).sort((first, second) =>
-      first.localeCompare(second, undefined, {
-        numeric: true,
-        sensitivity: "base",
-      })
-    );
-  }, [items]);
+  // --- Search functions for comboboxes ---
 
-  const itemsByGroup = (group_name?: string) => {
-    if (!group_name) return [];
-    return items.filter(item => (item.group_name || "Uncategorized") === group_name);
+  const searchCustomersFn = useCallback(
+    async (query: string): Promise<ComboboxOption[]> => {
+      const results = await searchCustomers(query);
+      return results.map((c) => ({
+        value: c.id,
+        label: c.name,
+      }));
+    },
+    []
+  );
+
+  const searchGroupsFn = useCallback(
+    async (query: string): Promise<ComboboxOption[]> => {
+      const q = query.toLowerCase();
+      const filtered = q
+        ? allGroups.filter((g) => g.toLowerCase().includes(q))
+        : allGroups;
+      return filtered.map((g) => ({ value: g, label: g }));
+    },
+    [allGroups]
+  );
+
+  const createItemSearchFn = useCallback(
+    (groupName: string) => {
+      return async (query: string): Promise<ComboboxOption[]> => {
+        const results = await searchItems(query, groupName || undefined);
+        return results.map((i) => ({
+          value: i.id,
+          label: i.name,
+          extra: { price: i.price },
+        }));
+      };
+    },
+    []
+  );
+
+  // --- Display value helpers ---
+
+  const updateLineItemDisplay = (
+    index: number,
+    field: "groupName" | "itemName",
+    value: string
+  ) => {
+    setLineItemDisplays((prev) => ({
+      ...prev,
+      [index]: {
+        ...prev[index],
+        [field]: value,
+      },
+    }));
   };
 
-  const handleGroupChange = (index: number, value: string, onChange: (value: string) => void) => {
+  const handleGroupSelect = (
+    index: number,
+    value: string,
+    label: string,
+    onChange: (value: string) => void
+  ) => {
     onChange(value);
     setLastSelectedGroupName(value);
+    updateLineItemDisplay(index, "groupName", label);
 
+    // Clear item if group changed and current item doesn't match
     const selectedItemId = form.getValues(`lineItems.${index}.itemId`);
-    const selectedItem = items.find((item) => item.id === selectedItemId);
-    const selectedItemGroup = selectedItem?.group_name || "Uncategorized";
-
-    if (selectedItem && selectedItemGroup !== value) {
+    if (selectedItemId) {
       form.setValue(`lineItems.${index}.itemId`, "");
       form.setValue(`lineItems.${index}.description`, "");
       form.setValue(`lineItems.${index}.unitPrice`, 0);
+      updateLineItemDisplay(index, "itemName", "");
       onItemFocus(null);
     }
+  };
+
+  const handleRemoveItem = (index: number) => {
+    remove(index);
+    setLineItemDisplays((prev) => {
+      const updated: Record<number, { groupName: string; itemName: string }> = {};
+      Object.entries(prev).forEach(([key, val]) => {
+        const k = Number(key);
+        if (k < index) {
+          updated[k] = val;
+        } else if (k > index) {
+          updated[k - 1] = val;
+        }
+      });
+      return updated;
+    });
   };
 
   const onSubmit = async (data: InvoiceFormValues) => {
@@ -174,26 +252,21 @@ export function InvoiceForm({ invoice, customers, items, onItemFocus, onCustomer
             render={({ field }) => (
               <FormItem className="md:col-span-1">
                 <FormLabel>Customer</FormLabel>
-                <Select
-                  onValueChange={(value) => {
-                    field.onChange(value);
-                    onCustomerChange(value);
-                  }}
-                  defaultValue={field.value}
-                >
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a customer" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {customers.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <FormControl>
+                  <SearchableCombobox
+                    value={field.value}
+                    displayValue={customerDisplayName}
+                    onSelect={(id, label) => {
+                      field.onChange(id);
+                      setCustomerDisplayName(label);
+                      onCustomerChange(id);
+                    }}
+                    searchFn={searchCustomersFn}
+                    placeholder="Select a customer"
+                    searchPlaceholder="Search customers..."
+                    emptyMessage="No customers found."
+                  />
+                </FormControl>
                 <FormMessage />
               </FormItem>
             )}
@@ -252,26 +325,18 @@ export function InvoiceForm({ invoice, customers, items, onItemFocus, onCustomer
                   <div className="col-span-3 flex items-center gap-2 pt-1">
                     <span className="text-sm font-medium text-muted-foreground w-4 shrink-0 text-right">{index + 1}.</span>
                     <FormItem className="flex-1">
-                    <Select
-                      onValueChange={(value) =>
-                        handleGroupChange(index, value, controllerField.onChange)
-                      }
-                      value={controllerField.value}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select group" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {itemGroups.map((group) => (
-                          <SelectItem key={group} value={group}>
-                            {group}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </FormItem>
+                      <SearchableCombobox
+                        value={controllerField.value || ""}
+                        displayValue={lineItemDisplays[index]?.groupName || controllerField.value || ""}
+                        onSelect={(value, label) =>
+                          handleGroupSelect(index, value, label, controllerField.onChange)
+                        }
+                        searchFn={searchGroupsFn}
+                        placeholder="Select group"
+                        searchPlaceholder="Search groups..."
+                        emptyMessage="No groups found."
+                      />
+                    </FormItem>
                   </div>
                 )}
               />
@@ -280,36 +345,31 @@ export function InvoiceForm({ invoice, customers, items, onItemFocus, onCustomer
                 name={`lineItems.${index}.itemId`}
                 render={({ field: controllerField }) => (
                   <FormItem className="col-span-3">
-                    <Select
-                      onValueChange={(value) => {
-                        controllerField.onChange(value);
-                        const selectedItem = items.find((i) => i.id === value);
+                    <SearchableCombobox
+                      value={controllerField.value}
+                      displayValue={lineItemDisplays[index]?.itemName || ""}
+                      onSelect={(itemId, itemLabel, extra) => {
+                        controllerField.onChange(itemId);
                         form.setValue(
                           `lineItems.${index}.description`,
-                          selectedItem?.name || ""
+                          itemLabel
                         );
-                        form.setValue(
-                          `lineItems.${index}.unitPrice`,
-                          selectedItem?.price || 0
-                        );
-                        onItemFocus(value);
+                        updateLineItemDisplay(index, "itemName", itemLabel);
+                        if (extra?.price !== undefined) {
+                          form.setValue(
+                            `lineItems.${index}.unitPrice`,
+                            Number(extra.price)
+                          );
+                        }
+                        onItemFocus(itemId);
                       }}
-                      value={controllerField.value}
+                      searchFn={createItemSearchFn(watchedLineItems[index]?.group_name || "")}
+                      placeholder="Select item"
+                      searchPlaceholder="Search items..."
+                      emptyMessage="No items found."
                       disabled={!watchedLineItems[index]?.group_name}
-                    >
-                      <FormControl>
-                        <SelectTrigger onFocus={() => onItemFocus(controllerField.value)}>
-                          <SelectValue placeholder="Select item" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {itemsByGroup(watchedLineItems[index]?.group_name).map((i) => (
-                          <SelectItem key={i.id} value={i.id}>
-                            {i.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      onTriggerFocus={() => onItemFocus(controllerField.value)}
+                    />
                   </FormItem>
                 )}
               />
@@ -343,7 +403,7 @@ export function InvoiceForm({ invoice, customers, items, onItemFocus, onCustomer
                   type="button"
                   variant="ghost"
                   size="icon"
-                  onClick={() => remove(index)}
+                  onClick={() => handleRemoveItem(index)}
                   className="text-destructive hover:text-destructive"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -355,15 +415,18 @@ export function InvoiceForm({ invoice, customers, items, onItemFocus, onCustomer
             type="button"
             variant="outline"
             size="sm"
-            onClick={() =>
+            onClick={() => {
               append({
                 itemId: "",
                 description: "",
                 quantity: 1,
                 unitPrice: 0,
                 group_name: lastSelectedGroupName,
-              })
-            }
+              });
+              if (lastSelectedGroupName) {
+                updateLineItemDisplay(fields.length, "groupName", lastSelectedGroupName);
+              }
+            }}
           >
             <PlusCircle className="mr-2 h-4 w-4" /> Add Item
           </Button>

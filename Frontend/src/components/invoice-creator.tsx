@@ -1,6 +1,6 @@
 
 "use client";
-import type { Customer, Item, Invoice } from "@/lib/types";
+import type { Invoice } from "@/lib/types";
 import { useState } from "react";
 import { InvoiceForm } from "./invoice-form";
 import { PriceHistoryPanel } from "./price-history-panel";
@@ -9,11 +9,9 @@ import { useIsMobile } from "@/hooks/use-mobile";
 
 type InvoiceCreatorProps = {
   invoice?: Invoice;
-  customers: Customer[];
-  items: Item[];
 };
 
-export function InvoiceCreator({ invoice, customers, items }: InvoiceCreatorProps) {
+export function InvoiceCreator({ invoice }: InvoiceCreatorProps) {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(invoice?.customerId || null);
   const isMobile = useIsMobile();
@@ -30,8 +28,6 @@ export function InvoiceCreator({ invoice, customers, items }: InvoiceCreatorProp
             <CardContent>
                 <InvoiceForm
                     invoice={invoice}
-                    customers={customers}
-                    items={items}
                     onItemFocus={setSelectedItemId}
                     onCustomerChange={setSelectedCustomerId}
                 />
