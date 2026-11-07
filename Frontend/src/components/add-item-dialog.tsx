@@ -29,7 +29,8 @@ import {
 import { Check, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { createItem, updateItem, getItemGroups } from "@/lib/actions";
+import { useApi } from "@/lib/api";
+import { getItemGroups } from "@/lib/actions";
 import type { Item } from "@/lib/types";
 import { useEffect, useState, useMemo, useRef } from "react";
 
@@ -51,31 +52,46 @@ type ItemDialogProps = {
 function GroupAutocomplete({
   value,
   onChange,
-  existingGroups,
+  existingGroups = [],
 }: {
   value: string;
   onChange: (val: string) => void;
-  existingGroups: string[];
+  existingGroups?: string[];
 }) {
   const [open, setOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const [internalGroups, setInternalGroups] = useState<string[]>(existingGroups);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (existingGroups && existingGroups.length > 0) {
+      setInternalGroups(existingGroups);
+    }
+  }, [existingGroups]);
+
+  const onInputFocus = async () => {
+    setOpen(true);
+    if (!internalGroups || internalGroups.length === 0) {
+      const groups = await getItemGroups();
+      setInternalGroups(groups.filter((g) => g && g !== "Uncategorized"));
+    }
+  };
 
   const query = value || "";
   const trimmed = query.trim();
 
   const filteredGroups = useMemo(() => {
-    if (!trimmed) return existingGroups;
-    return existingGroups.filter((g) =>
+    if (!trimmed) return internalGroups;
+    return internalGroups.filter((g) =>
       g.toLowerCase().includes(trimmed.toLowerCase())
     );
-  }, [existingGroups, trimmed]);
+  }, [internalGroups, trimmed]);
 
   const hasExactMatch = useMemo(() => {
-    return existingGroups.some(
+    return internalGroups.some(
       (g) => g.toLowerCase() === trimmed.toLowerCase()
     );
-  }, [existingGroups, trimmed]);
+  }, [internalGroups, trimmed]);
 
   const canCreateNew = trimmed.length > 0 && !hasExactMatch;
 
@@ -139,7 +155,7 @@ function GroupAutocomplete({
               onChange(e.target.value);
               setOpen(true);
             }}
-            onFocus={() => setOpen(true)}
+            onFocus={onInputFocus}
             onKeyDown={handleKeyDown}
             placeholder="e.g., Services, Hardware, or type new group..."
             autoComplete="off"
@@ -209,6 +225,7 @@ function GroupAutocomplete({
 
 export function ItemDialog({ open, onOpenChange, item }: ItemDialogProps) {
   const { toast } = useToast();
+  const { createItem, updateItem } = useApi();
   const isEditMode = !!item;
   const [existingGroups, setExistingGroups] = useState<string[]>([]);
 

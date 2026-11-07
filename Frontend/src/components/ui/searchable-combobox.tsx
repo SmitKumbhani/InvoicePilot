@@ -81,7 +81,8 @@ export function SearchableCombobox({
         const results = await searchFn(query);
         setOptions(results);
         setSelectedIndex(-1);
-      } catch {
+      } catch (err) {
+        console.error(`[SearchableCombobox] Error fetching options for query "${query}":`, err);
         setOptions([]);
       } finally {
         setLoading(false);

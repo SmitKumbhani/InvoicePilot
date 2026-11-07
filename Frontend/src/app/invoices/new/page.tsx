@@ -1,5 +1,7 @@
 import { InvoiceCreator } from "@/components/invoice-creator";
+import { getItemGroups } from "@/lib/actions";
 
 export default async function NewInvoicePage() {
-  return <InvoiceCreator />;
+  const groups = await getItemGroups();
+  return <InvoiceCreator initialGroups={groups} />;
 }

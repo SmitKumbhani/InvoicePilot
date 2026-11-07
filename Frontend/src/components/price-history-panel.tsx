@@ -49,6 +49,12 @@ export function PriceHistoryPanel({ itemId, customerId }: { itemId: string | nul
             setItemName("");
           }
         })
+        .catch((err) => {
+          if (currentFetchId !== fetchIdRef.current) return;
+          console.error(`[PriceHistoryPanel] Error fetching price history for item=${itemId}, customer=${customerId}:`, err);
+          setHistory([]);
+          setItemName("");
+        })
         .finally(() => {
           if (currentFetchId === fetchIdRef.current) {
             setLoading(false);

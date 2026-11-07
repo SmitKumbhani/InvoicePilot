@@ -1,4 +1,3 @@
-
 "use client";
 import type { Invoice } from "@/lib/types";
 import { useState } from "react";
@@ -9,13 +8,13 @@ import { useIsMobile } from "@/hooks/use-mobile";
 
 type InvoiceCreatorProps = {
   invoice?: Invoice;
+  initialGroups?: string[];
 };
 
-export function InvoiceCreator({ invoice }: InvoiceCreatorProps) {
+export function InvoiceCreator({ invoice, initialGroups = [] }: InvoiceCreatorProps) {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(invoice?.customerId || null);
   const isMobile = useIsMobile();
-
 
   return (
     <div className="grid lg:grid-cols-3 gap-8">
@@ -28,6 +27,7 @@ export function InvoiceCreator({ invoice }: InvoiceCreatorProps) {
             <CardContent>
                 <InvoiceForm
                     invoice={invoice}
+                    initialGroups={initialGroups}
                     onItemFocus={setSelectedItemId}
                     onCustomerChange={setSelectedCustomerId}
                 />

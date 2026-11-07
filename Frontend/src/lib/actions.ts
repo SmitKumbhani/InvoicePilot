@@ -595,24 +595,122 @@ export async function getSales(): Promise<SaleItem[]> {
 }
 
 export async function searchCustomers(query: string): Promise<Customer[]> {
-  const url = new URL(`${API_BASE_URL}/customers/search`);
-  if (query) url.searchParams.append("q", query);
-  const res = await fetch(url.toString());
-  if (!res.ok) return [];
-  return res.json();
+  const q = (query || "").trim();
+  try {
+    const url = new URL(`${API_BASE_URL}/customers/search`);
+    if (q) url.searchParams.append("q", q);
+    const res = await fetch(url.toString(), { cache: "no-store" });
+    if (res.ok) {
+      return await res.json();
+    }
+    console.warn(`[Server Actions] GET /customers/search returned status ${res.status} ${res.statusText}. Using fallback...`);
+  } catch (err) {
+    console.warn("[Server Actions] Error connecting to /customers/search:", err, "Using fallback...");
+  }
+
+  // Fallback to /customers
+  try {
+    const res = await fetch(`${API_BASE_URL}/customers`, { cache: "no-store" });
+    if (res.ok) {
+      const allCustomers: Customer[] = await res.json();
+      const lower = q.toLowerCase();
+      const filtered = allCustomers
+        .filter(
+          (c) =>
+            !lower ||
+            c.name.toLowerCase().includes(lower) ||
+            (c.phone && c.phone.includes(lower))
+        )
+        .slice(0, 20);
+      console.log(`[Server Actions] Fallback searchCustomers returned ${filtered.length} customers.`);
+      return filtered;
+    }
+    console.error(`[Server Actions] Fallback GET /customers returned status ${res.status} ${res.statusText}`);
+  } catch (err) {
+    console.error("[Server Actions] Fallback searchCustomers failed:", err);
+  }
+
+  return [];
 }
 
 export async function searchItems(query: string, group?: string): Promise<Item[]> {
-  const url = new URL(`${API_BASE_URL}/items/search`);
-  if (query) url.searchParams.append("q", query);
-  if (group) url.searchParams.append("group", group);
-  const res = await fetch(url.toString());
-  if (!res.ok) return [];
-  return res.json();
+  const q = (query || "").trim();
+  const g = (group || "").trim();
+  try {
+    const url = new URL(`${API_BASE_URL}/items/search`);
+    if (q) url.searchParams.append("q", q);
+    if (g) url.searchParams.append("group", g);
+    const res = await fetch(url.toString(), { cache: "no-store" });
+    if (res.ok) {
+      return await res.json();
+    }
+    console.warn(`[Server Actions] GET /items/search returned status ${res.status} ${res.statusText}. Using fallback...`);
+  } catch (err) {
+    console.warn("[Server Actions] Error connecting to /items/search:", err, "Using fallback...");
+  }
+
+  // Fallback to /items
+  try {
+    const res = await fetch(`${API_BASE_URL}/items`, { cache: "no-store" });
+    if (res.ok) {
+      const allItems: Item[] = await res.json();
+      const lowerQ = q.toLowerCase();
+      const filtered = allItems
+        .filter((item) => {
+          const matchesQ = !lowerQ || item.name.toLowerCase().includes(lowerQ);
+          const itemGroup = (item.group_name || "Uncategorized").trim();
+          const matchesG = !g || itemGroup === g;
+          return matchesQ && matchesG;
+        })
+        .slice(0, 20);
+      console.log(`[Server Actions] Fallback searchItems returned ${filtered.length} items.`);
+      return filtered;
+    }
+    console.error(`[Server Actions] Fallback GET /items returned status ${res.status} ${res.statusText}`);
+  } catch (err) {
+    console.error("[Server Actions] Fallback searchItems failed:", err);
+  }
+
+  return [];
 }
 
 export async function getItemGroups(): Promise<string[]> {
-  const res = await fetch(`${API_BASE_URL}/items/groups`);
-  if (!res.ok) return [];
-  return res.json();
+  try {
+    const res = await fetch(`${API_BASE_URL}/items/groups`, { cache: "no-store" });
+    if (res.ok) {
+      const groups = await res.json();
+      if (Array.isArray(groups) && groups.length > 0) {
+        console.log(`[Server Actions] getItemGroups() fetched ${groups.length} groups from /items/groups:`, groups);
+        return groups;
+      }
+    }
+    console.warn(`[Server Actions] GET /items/groups returned status ${res.status} ${res.statusText}. Using fallback...`);
+  } catch (err) {
+    console.warn("[Server Actions] Failed to fetch /items/groups:", err, "Using fallback...");
+  }
+
+  // Fallback to /items which is guaranteed to exist on all backend versions
+  try {
+    const res = await fetch(`${API_BASE_URL}/items`, { cache: "no-store" });
+    if (res.ok) {
+      const items = await res.json();
+      const groups = Array.from(
+        new Set(
+          items
+            .map((i: any) => (i.group_name || i.groupName || "").trim())
+            .filter((g: string) => g.length > 0)
+        )
+      ) as string[];
+      if (groups.length > 0) {
+        console.log(`[Server Actions] Fallback getItemGroups extracted ${groups.length} groups from /items:`, groups);
+        return groups.sort();
+      }
+    }
+    console.error(`[Server Actions] Fallback GET /items returned status ${res.status} ${res.statusText}`);
+  } catch (err) {
+    console.error("[Server Actions] Fallback to /items failed:", err);
+  }
+
+  console.warn("[Server Actions] No groups found in database. Defaulting to ['Uncategorized'].");
+  return ["Uncategorized"];
 }

@@ -506,11 +506,23 @@ def get_item_groups():
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("SELECT DISTINCT COALESCE(NULLIF(group_name, ''), 'Uncategorized') as grp FROM items ORDER BY grp ASC;")
-        groups = cur.fetchall()
+        cur.execute('''
+            SELECT DISTINCT grp FROM (
+                SELECT TRIM(group_name) AS grp FROM items WHERE group_name IS NOT NULL AND TRIM(group_name) != ''
+                UNION
+                SELECT TRIM(group_name) AS grp FROM line_items WHERE group_name IS NOT NULL AND TRIM(group_name) != ''
+            ) u ORDER BY grp ASC;
+        ''')
+        groups = [row[0] for row in cur.fetchall() if row[0]]
         cur.close()
         conn.close()
-        return jsonify([g[0] for g in groups])
+
+        if not groups:
+            groups = ['Uncategorized']
+        elif 'Uncategorized' not in groups:
+            groups.append('Uncategorized')
+
+        return jsonify(groups)
     except Exception as e:
         print(e)
         return internal_error(e)

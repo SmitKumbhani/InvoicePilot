@@ -49,11 +49,12 @@ type InvoiceFormValues = z.infer<typeof invoiceSchema>;
 
 type InvoiceFormProps = {
   invoice?: Invoice;
+  initialGroups?: string[];
   onItemFocus: (itemId: string | null) => void;
   onCustomerChange: (customerId: string | null) => void;
 };
 
-export function InvoiceForm({ invoice, onItemFocus, onCustomerChange }: InvoiceFormProps) {
+export function InvoiceForm({ invoice, initialGroups = [], onItemFocus, onCustomerChange }: InvoiceFormProps) {
   const { toast } = useToast();
   const router = useRouter();
   const { createInvoice, updateInvoice } = useApi();
@@ -87,9 +88,20 @@ export function InvoiceForm({ invoice, onItemFocus, onCustomerChange }: InvoiceF
   });
 
   // Cache item groups (small dataset, loaded once)
-  const [allGroups, setAllGroups] = useState<string[]>([]);
+  const [allGroups, setAllGroups] = useState<string[]>(initialGroups);
   useEffect(() => {
-    getItemGroups().then(setAllGroups);
+    getItemGroups()
+      .then((groups) => {
+        console.log(`[InvoiceForm] Initial getItemGroups() returned ${groups?.length || 0} groups:`, groups);
+        if (groups && groups.length > 0) {
+          setAllGroups(groups);
+        } else {
+          console.warn("[InvoiceForm] Initial getItemGroups() returned an empty list.");
+        }
+      })
+      .catch((err) => {
+        console.error("[InvoiceForm] Failed to load initial groups:", err);
+      });
   }, []);
 
   const form = useForm<InvoiceFormValues>({
@@ -163,22 +175,43 @@ export function InvoiceForm({ invoice, onItemFocus, onCustomerChange }: InvoiceF
 
   const searchCustomersFn = useCallback(
     async (query: string): Promise<ComboboxOption[]> => {
-      const results = await searchCustomers(query);
-      return results.map((c) => ({
-        value: c.id,
-        label: c.name,
-      }));
+      try {
+        const results = await searchCustomers(query);
+        console.log(`[InvoiceForm:searchCustomers] query="${query}" returned ${results.length} results:`, results);
+        return results.map((c) => ({
+          value: c.id,
+          label: c.name,
+        }));
+      } catch (err) {
+        console.error(`[InvoiceForm:searchCustomers] Error searching customers for query "${query}":`, err);
+        return [];
+      }
     },
     []
   );
 
   const searchGroupsFn = useCallback(
     async (query: string): Promise<ComboboxOption[]> => {
-      const q = query.toLowerCase();
-      const filtered = q
-        ? allGroups.filter((g) => g.toLowerCase().includes(q))
-        : allGroups;
-      return filtered.map((g) => ({ value: g, label: g }));
+      try {
+        let groups = allGroups;
+        if (!groups || groups.length === 0) {
+          console.log("[InvoiceForm:searchGroups] allGroups is empty, fetching getItemGroups()...");
+          groups = await getItemGroups();
+          console.log(`[InvoiceForm:searchGroups] On-demand getItemGroups() returned ${groups?.length || 0} groups:`, groups);
+          if (groups && groups.length > 0) {
+            setAllGroups(groups);
+          }
+        }
+        const q = (query || "").toLowerCase().trim();
+        const filtered = q
+          ? groups.filter((g) => g.toLowerCase().includes(q))
+          : groups;
+        console.log(`[InvoiceForm:searchGroups] query="${query}" matched ${filtered.length} groups:`, filtered);
+        return filtered.map((g) => ({ value: g, label: g }));
+      } catch (err) {
+        console.error(`[InvoiceForm:searchGroups] Error searching groups for query "${query}":`, err);
+        return [];
+      }
     },
     [allGroups]
   );
@@ -186,12 +219,18 @@ export function InvoiceForm({ invoice, onItemFocus, onCustomerChange }: InvoiceF
   const createItemSearchFn = useCallback(
     (groupName: string) => {
       return async (query: string): Promise<ComboboxOption[]> => {
-        const results = await searchItems(query, groupName || undefined);
-        return results.map((i) => ({
-          value: i.id,
-          label: i.name,
-          extra: { price: i.price },
-        }));
+        try {
+          const results = await searchItems(query, groupName || undefined);
+          console.log(`[InvoiceForm:searchItems] query="${query}", group="${groupName}" returned ${results.length} items:`, results);
+          return results.map((i) => ({
+            value: i.id,
+            label: i.name,
+            extra: { price: i.price },
+          }));
+        } catch (err) {
+          console.error(`[InvoiceForm:searchItems] Error searching items for query="${query}", group="${groupName}":`, err);
+          return [];
+        }
       };
     },
     []

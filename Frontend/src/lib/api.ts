@@ -18,160 +18,68 @@ export const useApi = () => {
   const { showLoader, hideLoader } = useLoader();
   const { enabled } = useKillSwitch();
 
-  const getInvoices = async (status?: "all" | Invoice["status"]) => {
+  const wrapApi = async <T>(name: string, fn: () => Promise<T>, safeDefault?: T): Promise<T> => {
     showLoader();
     try {
       if (enabled) {
-        return [] as Invoice[];
+        console.warn(`[useApi] Safe mode active. Skipping ${name}.`);
+        return safeDefault as T;
       }
-      return await serverActions.getInvoices(status);
+      return await fn();
+    } catch (error) {
+      console.error(`[useApi Error in ${name}]:`, error);
+      throw error;
     } finally {
       hideLoader();
     }
+  };
+
+  const getInvoices = async (status?: "all" | Invoice["status"]) => {
+    return wrapApi("getInvoices", () => serverActions.getInvoices(status), [] as Invoice[]);
   };
 
   const getInvoiceById = async (invoiceId: string) => {
-    showLoader();
-    try {
-      if (enabled) {
-        return undefined;
-      }
-      return await serverActions.getInvoiceById(invoiceId);
-    } finally {
-      hideLoader();
-    }
+    return wrapApi("getInvoiceById", () => serverActions.getInvoiceById(invoiceId), undefined);
   };
 
   const getCustomers = async () => {
-    showLoader();
-    try {
-      if (enabled) {
-        return [] as Customer[];
-      }
-      return await serverActions.getCustomers();
-    } finally {
-      hideLoader();
-    }
+    return wrapApi("getCustomers", () => serverActions.getCustomers(), [] as Customer[]);
   };
 
   const getItems = async () => {
-    showLoader();
-    try {
-      if (enabled) {
-        return [] as Item[];
-      }
-      return await serverActions.getItems();
-    } finally {
-      hideLoader();
-    }
+    return wrapApi("getItems", () => serverActions.getItems(), [] as Item[]);
   };
 
   const getItemPriceHistory = async (itemId: string, customerId: string) => {
-    showLoader();
-    try {
-      if (enabled) {
-        return [] as PriceHistoryEntry[];
-      }
-      return await serverActions.getItemPriceHistory(itemId, customerId);
-    } finally {
-      hideLoader();
-    }
+    return wrapApi("getItemPriceHistory", () => serverActions.getItemPriceHistory(itemId, customerId), [] as PriceHistoryEntry[]);
   };
 
   const createInvoice = async (invoiceData: InvoiceUpsertInput) => {
-    showLoader();
-    try {
-      if (enabled) {
-        return { status: "Safe mode active" };
-      }
-      return await serverActions.createInvoice(invoiceData);
-    } finally {
-      hideLoader();
-    }
+    return wrapApi("createInvoice", () => serverActions.createInvoice(invoiceData), { status: "Safe mode active" });
   };
 
   const updateInvoice = async (invoiceId: string, invoiceData: InvoiceUpsertInput) => {
-    showLoader();
-    try {
-      if (enabled) {
-        return {} as Invoice;
-      }
-      return await serverActions.updateInvoice(invoiceId, invoiceData);
-    } finally {
-      hideLoader();
-    }
+    return wrapApi("updateInvoice", () => serverActions.updateInvoice(invoiceId, invoiceData), { status: "Safe mode active" });
   };
 
-  const createCustomerPayment = async (
-    customerId: string,
-    paymentData: CreateCustomerPaymentInput
-  ): Promise<CustomerPayment> => {
-    showLoader();
-    try {
-      if (enabled) {
-        return {
-          id: "",
-          customerId,
-          amount: paymentData.amount,
-          paymentDate: paymentData.paymentDate,
-          note: paymentData.note,
-          allocations: [],
-        };
-      }
-      return await serverActions.createCustomerPayment(customerId, paymentData);
-    } finally {
-      hideLoader();
-    }
+  const createCustomerPayment = async (paymentData: CreateCustomerPaymentInput) => {
+    return wrapApi("createCustomerPayment", () => serverActions.createCustomerPayment(paymentData), { status: "Safe mode active" } as any);
   };
 
-  const getCustomerPayments = async (customerId: string): Promise<CustomerPaymentsResponse> => {
-    showLoader();
-    try {
-      if (enabled) {
-        return { payments: [], summary: { customerCredit: 0, totalUnallocated: 0 } };
-      }
-      return await serverActions.getCustomerPayments(customerId);
-    } finally {
-      hideLoader();
-    }
+  const getCustomerPayments = async (customerId: string) => {
+    return wrapApi("getCustomerPayments", () => serverActions.getCustomerPayments(customerId), { customerId, payments: [], pendingAmount: 0, customerCredit: 0 } as CustomerPaymentsResponse);
   };
 
   const updateCustomerPayment = async (
     customerId: string,
     paymentId: string,
     paymentData: UpdateCustomerPaymentInput
-  ): Promise<CustomerPayment> => {
-    showLoader();
-    try {
-      if (enabled) {
-        return {
-          id: paymentId,
-          customerId,
-          amount: paymentData.amount,
-          paymentDate: paymentData.paymentDate,
-          note: paymentData.note,
-          allocations: [],
-        };
-      }
-      return await serverActions.updateCustomerPayment(customerId, paymentId, paymentData);
-    } finally {
-      hideLoader();
-    }
+  ) => {
+    return wrapApi("updateCustomerPayment", () => serverActions.updateCustomerPayment(customerId, paymentId, paymentData), { status: "Safe mode active" } as any);
   };
 
-  const deleteCustomerPayment = async (
-    customerId: string,
-    paymentId: string
-  ): Promise<{ success: true }> => {
-    showLoader();
-    try {
-      if (enabled) {
-        return { success: true };
-      }
-      return await serverActions.deleteCustomerPayment(customerId, paymentId);
-    } finally {
-      hideLoader();
-    }
+  const deleteCustomerPayment = async (customerId: string, paymentId: string) => {
+    return wrapApi("deleteCustomerPayment", () => serverActions.deleteCustomerPayment(customerId, paymentId), { message: "Safe mode active" });
   };
 
   const createItem = async (itemData: {
@@ -180,15 +88,7 @@ export const useApi = () => {
     purchasePrice?: number;
     group_name?: string;
   }) => {
-    showLoader();
-    try {
-      if (enabled) {
-        return { status: "Safe mode active" };
-      }
-      return await serverActions.createItem(itemData);
-    } finally {
-      hideLoader();
-    }
+    return wrapApi("createItem", () => serverActions.createItem(itemData), { status: "Safe mode active" } as any);
   };
 
   const updateItem = async (itemId: string, itemData: {
@@ -197,63 +97,23 @@ export const useApi = () => {
     purchasePrice?: number;
     group_name?: string;
   }) => {
-    showLoader();
-    try {
-      if (enabled) {
-        return { status: "Safe mode active" };
-      }
-      return await serverActions.updateItem(itemId, itemData);
-    } finally {
-      hideLoader();
-    }
+    return wrapApi("updateItem", () => serverActions.updateItem(itemId, itemData), { status: "Safe mode active" } as any);
   };
 
   const createCustomer = async (customerData: { name: string; phone: string }) => {
-    showLoader();
-    try {
-      if (enabled) {
-        return { status: "Safe mode active" };
-      }
-      return await serverActions.createCustomer(customerData);
-    } finally {
-      hideLoader();
-    }
+    return wrapApi("createCustomer", () => serverActions.createCustomer(customerData), { status: "Safe mode active" } as any);
   };
 
   const updateCustomer = async (customerId: string, customerData: { name: string; phone: string }) => {
-    showLoader();
-    try {
-      if (enabled) {
-        return { status: "Safe mode active" };
-      }
-      return await serverActions.updateCustomer(customerId, customerData);
-    } finally {
-      hideLoader();
-    }
+    return wrapApi("updateCustomer", () => serverActions.updateCustomer(customerId, customerData), { status: "Safe mode active" } as any);
   };
 
   const deleteCustomer = async (customerId: string) => {
-    showLoader();
-    try {
-      if (enabled) {
-        return { success: true };
-      }
-      return await serverActions.deleteCustomer(customerId);
-    } finally {
-      hideLoader();
-    }
+    return wrapApi("deleteCustomer", () => serverActions.deleteCustomer(customerId), { success: true });
   };
 
   const deleteInvoice = async (invoiceId: string) => {
-    showLoader();
-    try {
-      if (enabled) {
-        return { success: true };
-      }
-      return await serverActions.deleteInvoice(invoiceId);
-    } finally {
-      hideLoader();
-    }
+    return wrapApi("deleteInvoice", () => serverActions.deleteInvoice(invoiceId), { success: true });
   };
 
   return {

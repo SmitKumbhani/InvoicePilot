@@ -52,31 +52,53 @@ type ItemDialogProps = {
 function GroupAutocomplete({
   value,
   onChange,
-  existingGroups,
+  existingGroups = [],
 }: {
   value: string;
   onChange: (val: string) => void;
-  existingGroups: string[];
+  existingGroups?: string[];
 }) {
   const [open, setOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const [internalGroups, setInternalGroups] = useState<string[]>(existingGroups);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (existingGroups && existingGroups.length > 0) {
+      setInternalGroups(existingGroups);
+    }
+  }, [existingGroups]);
+
+  const onInputFocus = async () => {
+    setOpen(true);
+    if (!internalGroups || internalGroups.length === 0) {
+      try {
+        console.log("[ItemDialog:GroupAutocomplete] Fetching groups on input focus...");
+        const groups = await getItemGroups();
+        const filtered = groups.filter((g) => g && g !== "Uncategorized");
+        console.log(`[ItemDialog:GroupAutocomplete] Loaded ${filtered.length} groups on focus:`, filtered);
+        setInternalGroups(filtered);
+      } catch (err) {
+        console.error("[ItemDialog:GroupAutocomplete] Error fetching groups on focus:", err);
+      }
+    }
+  };
 
   const query = value || "";
   const trimmed = query.trim();
 
   const filteredGroups = useMemo(() => {
-    if (!trimmed) return existingGroups;
-    return existingGroups.filter((g) =>
+    if (!trimmed) return internalGroups;
+    return internalGroups.filter((g) =>
       g.toLowerCase().includes(trimmed.toLowerCase())
     );
-  }, [existingGroups, trimmed]);
+  }, [internalGroups, trimmed]);
 
   const hasExactMatch = useMemo(() => {
-    return existingGroups.some(
+    return internalGroups.some(
       (g) => g.toLowerCase() === trimmed.toLowerCase()
     );
-  }, [existingGroups, trimmed]);
+  }, [internalGroups, trimmed]);
 
   const canCreateNew = trimmed.length > 0 && !hasExactMatch;
 
@@ -141,7 +163,7 @@ function GroupAutocomplete({
               onChange(e.target.value);
               setOpen(true);
             }}
-            onFocus={() => setOpen(true)}
+            onFocus={onInputFocus}
             onKeyDown={handleKeyDown}
             placeholder="e.g., Services, Hardware, or type new group..."
             autoComplete="off"
@@ -227,9 +249,15 @@ export function ItemDialog({ open, onOpenChange, item }: ItemDialogProps) {
 
   useEffect(() => {
     if (open) {
-      getItemGroups().then((groups) => {
-        setExistingGroups(groups.filter((g) => g && g !== "Uncategorized"));
-      });
+      getItemGroups()
+        .then((groups) => {
+          const filtered = groups.filter((g) => g && g !== "Uncategorized");
+          console.log(`[ItemDialog] Loaded ${filtered.length} existing groups:`, filtered);
+          setExistingGroups(filtered);
+        })
+        .catch((err) => {
+          console.error("[ItemDialog] Error fetching existing groups:", err);
+        });
 
       if (isEditMode && item) {
         form.reset({
