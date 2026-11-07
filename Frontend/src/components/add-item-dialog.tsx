@@ -21,10 +21,17 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Check, Plus } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { createItem, updateItem } from "@/lib/actions";
+import { createItem, updateItem, getItemGroups } from "@/lib/actions";
 import type { Item } from "@/lib/types";
-import { useEffect } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 
 const itemSchema = z.object({
   name: z.string().min(3, "Item name must be at least 3 characters."),
@@ -41,9 +48,169 @@ type ItemDialogProps = {
   item?: Item | null;
 };
 
+function GroupAutocomplete({
+  value,
+  onChange,
+  existingGroups,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  existingGroups: string[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const query = value || "";
+  const trimmed = query.trim();
+
+  const filteredGroups = useMemo(() => {
+    if (!trimmed) return existingGroups;
+    return existingGroups.filter((g) =>
+      g.toLowerCase().includes(trimmed.toLowerCase())
+    );
+  }, [existingGroups, trimmed]);
+
+  const hasExactMatch = useMemo(() => {
+    return existingGroups.some(
+      (g) => g.toLowerCase() === trimmed.toLowerCase()
+    );
+  }, [existingGroups, trimmed]);
+
+  const canCreateNew = trimmed.length > 0 && !hasExactMatch;
+
+  const optionsList = useMemo(() => {
+    const list = [...filteredGroups];
+    if (canCreateNew) {
+      list.push(`__CREATE__:${trimmed}`);
+    }
+    return list;
+  }, [filteredGroups, canCreateNew, trimmed]);
+
+  useEffect(() => {
+    setHighlightedIndex(-1);
+  }, [value]);
+
+  const selectGroup = (groupName: string) => {
+    onChange(groupName);
+    setOpen(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      setOpen(true);
+      return;
+    }
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlightedIndex((prev) =>
+        prev < optionsList.length - 1 ? prev + 1 : 0
+      );
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightedIndex((prev) =>
+        prev > 0 ? prev - 1 : optionsList.length - 1
+      );
+    } else if (e.key === "Enter") {
+      if (open && highlightedIndex >= 0 && highlightedIndex < optionsList.length) {
+        e.preventDefault();
+        const selected = optionsList[highlightedIndex];
+        if (selected.startsWith("__CREATE__:")) {
+          selectGroup(selected.replace("__CREATE__:", ""));
+        } else {
+          selectGroup(selected);
+        }
+      } else if (open) {
+        setOpen(false);
+      }
+    } else if (e.key === "Escape") {
+      setOpen(false);
+    }
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <div ref={containerRef} className="w-full">
+          <Input
+            value={value}
+            onChange={(e) => {
+              onChange(e.target.value);
+              setOpen(true);
+            }}
+            onFocus={() => setOpen(true)}
+            onKeyDown={handleKeyDown}
+            placeholder="e.g., Services, Hardware, or type new group..."
+            autoComplete="off"
+          />
+        </div>
+      </PopoverTrigger>
+      <PopoverContent
+        className="w-[--radix-popover-trigger-width] min-w-[280px] p-1 max-h-60 overflow-y-auto"
+        align="start"
+        sideOffset={4}
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
+        {optionsList.length === 0 ? (
+          <div className="py-3 px-3 text-sm text-muted-foreground text-center">
+            Type a group name to create one.
+          </div>
+        ) : (
+          <div className="space-y-0.5">
+            {filteredGroups.map((group, idx) => (
+              <div
+                key={group}
+                className={cn(
+                  "flex items-center justify-between px-3 py-1.5 text-sm rounded cursor-pointer transition-colors",
+                  idx === highlightedIndex
+                    ? "bg-accent text-accent-foreground"
+                    : "hover:bg-accent/50 text-foreground"
+                )}
+                onMouseEnter={() => setHighlightedIndex(idx)}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  selectGroup(group);
+                }}
+              >
+                <span>{group}</span>
+                {value === group && <Check className="h-4 w-4 text-primary" />}
+              </div>
+            ))}
+
+            {canCreateNew && (
+              <div
+                className={cn(
+                  "flex items-center gap-2 px-3 py-2 text-sm rounded cursor-pointer text-primary transition-colors border-t mt-1 font-medium",
+                  optionsList.indexOf(`__CREATE__:${trimmed}`) === highlightedIndex
+                    ? "bg-accent text-accent-foreground"
+                    : "hover:bg-accent/50"
+                )}
+                onMouseEnter={() =>
+                  setHighlightedIndex(optionsList.indexOf(`__CREATE__:${trimmed}`))
+                }
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  selectGroup(trimmed);
+                }}
+              >
+                <Plus className="h-4 w-4 shrink-0" />
+                <span className="truncate">
+                  Create new group &ldquo;{trimmed}&rdquo;
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export function ItemDialog({ open, onOpenChange, item }: ItemDialogProps) {
   const { toast } = useToast();
   const isEditMode = !!item;
+  const [existingGroups, setExistingGroups] = useState<string[]>([]);
 
   const form = useForm<ItemFormValues>({
     resolver: zodResolver(itemSchema),
@@ -56,18 +223,28 @@ export function ItemDialog({ open, onOpenChange, item }: ItemDialogProps) {
   });
 
   useEffect(() => {
-    if (isEditMode && item) {
-      form.reset({
-        name: item.name,
-        price: item.price,
-        purchasePrice: item.price, // Assuming purchase price is same as sale price for now
-        group_name: item.group_name || "",
+    if (open) {
+      getItemGroups().then((groups) => {
+        setExistingGroups(groups.filter((g) => g && g !== "Uncategorized"));
       });
-    } else {
-      form.reset();
+
+      if (isEditMode && item) {
+        form.reset({
+          name: item.name,
+          price: item.price,
+          purchasePrice: item.price,
+          group_name: item.group_name || "",
+        });
+      } else {
+        form.reset({
+          name: "",
+          price: 0,
+          purchasePrice: 0,
+          group_name: "",
+        });
+      }
     }
-  }, [item, isEditMode, form]);
-  
+  }, [item, isEditMode, open, form]);
 
   const onSubmit = async (data: ItemFormValues) => {
     try {
@@ -126,7 +303,11 @@ export function ItemDialog({ open, onOpenChange, item }: ItemDialogProps) {
                 <FormItem>
                   <FormLabel>Group Name (Optional)</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g., Services or Manufacturer" {...field} />
+                    <GroupAutocomplete
+                      value={field.value || ""}
+                      onChange={field.onChange}
+                      existingGroups={existingGroups}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

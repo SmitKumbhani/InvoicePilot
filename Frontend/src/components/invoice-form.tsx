@@ -3,7 +3,7 @@
 import { useForm, useFieldArray, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Form,
   FormControl,
@@ -59,6 +59,13 @@ export function InvoiceForm({ invoice, onItemFocus, onCustomerChange }: InvoiceF
   const { createInvoice, updateInvoice } = useApi();
   const { showLoader, hideLoader } = useLoader();
   const [lastSelectedGroupName, setLastSelectedGroupName] = useState("");
+  const [isMac, setIsMac] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setIsMac(navigator.platform.toUpperCase().indexOf("MAC") >= 0);
+    }
+  }, []);
 
   // Display values for combobox selections (not stored in form, only for UI display)
   const [customerDisplayName, setCustomerDisplayName] = useState(
@@ -112,6 +119,46 @@ export function InvoiceForm({ invoice, onItemFocus, onCustomerChange }: InvoiceF
   );
   const total = Math.round(rawTotal);
 
+  // --- Display value helpers ---
+
+  const updateLineItemDisplay = (
+    index: number,
+    field: "groupName" | "itemName",
+    value: string
+  ) => {
+    setLineItemDisplays((prev) => ({
+      ...prev,
+      [index]: {
+        ...prev[index],
+        [field]: value,
+      },
+    }));
+  };
+
+  const handleAddNewItem = useCallback(() => {
+    const newIndex = fields.length;
+    append({
+      itemId: "",
+      description: "",
+      quantity: 1,
+      unitPrice: 0,
+      group_name: lastSelectedGroupName,
+    });
+    if (lastSelectedGroupName) {
+      updateLineItemDisplay(newIndex, "groupName", lastSelectedGroupName);
+    }
+
+    setTimeout(() => {
+      const targetId = lastSelectedGroupName
+        ? `line-item-${newIndex}-item-trigger`
+        : `line-item-${newIndex}-group-trigger`;
+      const el = document.getElementById(targetId);
+      if (el) {
+        el.focus();
+      }
+    }, 60);
+  }, [fields.length, append, lastSelectedGroupName]);
+
   // --- Search functions for comboboxes ---
 
   const searchCustomersFn = useCallback(
@@ -150,22 +197,6 @@ export function InvoiceForm({ invoice, onItemFocus, onCustomerChange }: InvoiceF
     []
   );
 
-  // --- Display value helpers ---
-
-  const updateLineItemDisplay = (
-    index: number,
-    field: "groupName" | "itemName",
-    value: string
-  ) => {
-    setLineItemDisplays((prev) => ({
-      ...prev,
-      [index]: {
-        ...prev[index],
-        [field]: value,
-      },
-    }));
-  };
-
   const handleGroupSelect = (
     index: number,
     value: string,
@@ -185,6 +216,14 @@ export function InvoiceForm({ invoice, onItemFocus, onCustomerChange }: InvoiceF
       updateLineItemDisplay(index, "itemName", "");
       onItemFocus(null);
     }
+
+    // Auto-focus the item combobox trigger in this row
+    setTimeout(() => {
+      const itemTrigger = document.getElementById(`line-item-${index}-item-trigger`);
+      if (itemTrigger) {
+        itemTrigger.focus();
+      }
+    }, 50);
   };
 
   const handleRemoveItem = (index: number) => {
@@ -203,48 +242,121 @@ export function InvoiceForm({ invoice, onItemFocus, onCustomerChange }: InvoiceF
     });
   };
 
-  const onSubmit = async (data: InvoiceFormValues) => {
-    showLoader();
-    try {
-      if (invoice) {
-        await updateInvoice(invoice.id, {
-          customerId: data.customerId,
-          issueDate: data.issueDate.toUTCString(),
-          lineItems: data.lineItems,
-        });
+  const onSubmit = useCallback(
+    async (data: InvoiceFormValues) => {
+      showLoader();
+      try {
+        if (invoice) {
+          await updateInvoice(invoice.id, {
+            customerId: data.customerId,
+            issueDate: data.issueDate.toUTCString(),
+            lineItems: data.lineItems,
+          });
+          toast({
+            title: "Success",
+            description: "Invoice updated successfully.",
+          });
+          router.push(`/invoices/${invoice.id}`);
+        } else {
+          const newInvoiceData = {
+            customerId: data.customerId,
+            issueDate: data.issueDate.toUTCString(),
+            lineItems: data.lineItems,
+            status: "pending" as const,
+          };
+          await createInvoice(newInvoiceData);
+          toast({
+            title: "Success",
+            description: "Invoice created successfully.",
+          });
+          router.push("/");
+        }
+      } catch (error) {
         toast({
-          title: "Success",
-          description: "Invoice updated successfully.",
+          variant: "destructive",
+          title: "Error",
+          description: invoice ? "Failed to update invoice." : "Failed to create invoice.",
         });
-        router.push(`/invoices/${invoice.id}`);
-      } else {
-        const newInvoiceData = {
-          customerId: data.customerId,
-          issueDate: data.issueDate.toUTCString(),
-          lineItems: data.lineItems,
-          status: "pending" as const,
-        };
-        await createInvoice(newInvoiceData);
-        toast({
-          title: "Success",
-          description: "Invoice created successfully.",
-        });
-        router.push("/");
+      } finally {
+        hideLoader();
       }
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: invoice ? "Failed to update invoice." : "Failed to create invoice.",
-      });
-    } finally {
-      hideLoader();
+    },
+    [invoice, updateInvoice, createInvoice, router, showLoader, hideLoader, toast]
+  );
+
+  const onSubmitRef = useRef(onSubmit);
+  onSubmitRef.current = onSubmit;
+
+  // Window-level shortcut: Ctrl+S (Windows) / Cmd+S (Mac) to save the invoice
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        e.stopPropagation();
+        form.handleSubmit((values) => onSubmitRef.current(values))();
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalKeyDown, true);
+    return () => {
+      window.removeEventListener("keydown", handleGlobalKeyDown, true);
+    };
+  }, [form]);
+
+  // Form-level keydown handler:
+  // - Enter key adds a new item and focuses it instead of submitting the form
+  // - Ctrl+S / Cmd+S triggers submit
+  const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
+    // Save on Ctrl+S / Cmd+S
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+      e.preventDefault();
+      e.stopPropagation();
+      form.handleSubmit((values) => onSubmitRef.current(values))();
+      return;
+    }
+
+    if (e.key === "Enter") {
+      const target = e.target as HTMLElement;
+
+      // Allow textareas to have normal multi-line enter
+      if (target.tagName === "TEXTAREA") {
+        return;
+      }
+
+      // If user specifically pressed enter on the submit button, allow submission
+      if (target.getAttribute("type") === "submit" || target.closest('button[type="submit"]')) {
+        return;
+      }
+
+      // If target is inside a combobox search input or open dialog, let combobox handle selection
+      if (
+        target.closest("[cmdk-input-wrapper]") ||
+        target.closest('[role="dialog"]') ||
+        target.closest("[data-radix-popper-content-wrapper]")
+      ) {
+        return;
+      }
+
+      // If target is a standard button (like delete or open trigger), let the button handle it
+      if (target.tagName === "BUTTON") {
+        return;
+      }
+
+      // In all other cases (e.g. Quantity input, Price input, row fields):
+      // Prevent premature invoice creation, add a new item, and focus it!
+      e.preventDefault();
+      e.stopPropagation();
+      handleAddNewItem();
     }
   };
-  
+
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+      <form
+        onSubmit={form.handleSubmit(onSubmit)}
+        onKeyDown={handleFormKeyDown}
+        className="space-y-8"
+      >
         <div className="grid md:grid-cols-2 gap-4">
           <FormField
             control={form.control}
@@ -254,6 +366,7 @@ export function InvoiceForm({ invoice, onItemFocus, onCustomerChange }: InvoiceF
                 <FormLabel>Customer</FormLabel>
                 <FormControl>
                   <SearchableCombobox
+                    id="customer-combobox-trigger"
                     value={field.value}
                     displayValue={customerDisplayName}
                     onSelect={(id, label) => {
@@ -312,7 +425,13 @@ export function InvoiceForm({ invoice, onItemFocus, onCustomerChange }: InvoiceF
         </div>
 
         <div className="space-y-4">
-          <h3 className="text-lg font-medium">Items</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-medium">Items</h3>
+            <span className="text-xs text-muted-foreground hidden sm:inline">
+              Press <kbd className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground border font-mono">Enter</kbd> to add row • <kbd className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground border font-mono">{isMac ? "⌘+S" : "Ctrl+S"}</kbd> to save
+            </span>
+          </div>
+
           {fields.map((field, index) => (
             <div
               key={field.id}
@@ -326,6 +445,7 @@ export function InvoiceForm({ invoice, onItemFocus, onCustomerChange }: InvoiceF
                     <span className="text-sm font-medium text-muted-foreground w-4 shrink-0 text-right">{index + 1}.</span>
                     <FormItem className="flex-1">
                       <SearchableCombobox
+                        id={`line-item-${index}-group-trigger`}
                         value={controllerField.value || ""}
                         displayValue={lineItemDisplays[index]?.groupName || controllerField.value || ""}
                         onSelect={(value, label) =>
@@ -346,6 +466,7 @@ export function InvoiceForm({ invoice, onItemFocus, onCustomerChange }: InvoiceF
                 render={({ field: controllerField }) => (
                   <FormItem className="col-span-3">
                     <SearchableCombobox
+                      id={`line-item-${index}-item-trigger`}
                       value={controllerField.value}
                       displayValue={lineItemDisplays[index]?.itemName || ""}
                       onSelect={(itemId, itemLabel, extra) => {
@@ -362,6 +483,15 @@ export function InvoiceForm({ invoice, onItemFocus, onCustomerChange }: InvoiceF
                           );
                         }
                         onItemFocus(itemId);
+
+                        // Automatically focus the quantity input in this row
+                        setTimeout(() => {
+                          const qtyEl = document.getElementById(`line-item-${index}-quantity`) as HTMLInputElement;
+                          if (qtyEl) {
+                            qtyEl.focus();
+                            qtyEl.select();
+                          }
+                        }, 50);
                       }}
                       searchFn={createItemSearchFn(watchedLineItems[index]?.group_name || "")}
                       placeholder="Select item"
@@ -379,7 +509,12 @@ export function InvoiceForm({ invoice, onItemFocus, onCustomerChange }: InvoiceF
                 render={({ field }) => (
                   <FormItem className="col-span-1">
                     <FormControl>
-                      <Input type="number" placeholder="Qty" {...field} />
+                      <Input
+                        id={`line-item-${index}-quantity`}
+                        type="number"
+                        placeholder="Qty"
+                        {...field}
+                      />
                     </FormControl>
                   </FormItem>
                 )}
@@ -390,7 +525,12 @@ export function InvoiceForm({ invoice, onItemFocus, onCustomerChange }: InvoiceF
                 render={({ field }) => (
                   <FormItem className="col-span-2">
                     <FormControl>
-                      <Input type="number" placeholder="Price" {...field} />
+                      <Input
+                        id={`line-item-${index}-price`}
+                        type="number"
+                        placeholder="Price"
+                        {...field}
+                      />
                     </FormControl>
                   </FormItem>
                 )}
@@ -415,18 +555,7 @@ export function InvoiceForm({ invoice, onItemFocus, onCustomerChange }: InvoiceF
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => {
-              append({
-                itemId: "",
-                description: "",
-                quantity: 1,
-                unitPrice: 0,
-                group_name: lastSelectedGroupName,
-              });
-              if (lastSelectedGroupName) {
-                updateLineItemDisplay(fields.length, "groupName", lastSelectedGroupName);
-              }
-            }}
+            onClick={handleAddNewItem}
           >
             <PlusCircle className="mr-2 h-4 w-4" /> Add Item
           </Button>
@@ -444,9 +573,14 @@ export function InvoiceForm({ invoice, onItemFocus, onCustomerChange }: InvoiceF
             </div>
         </div>
 
-        <Button type="submit" disabled={form.formState.isSubmitting}>
-            {form.formState.isSubmitting ? "Saving..." : "Save Invoice"}
-        </Button>
+        <div className="flex items-center justify-between">
+          <Button type="submit" disabled={form.formState.isSubmitting}>
+            {form.formState.isSubmitting ? "Saving..." : (invoice ? "Save Changes" : "Save Invoice")}
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            Shortcut: <kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono">{isMac ? "⌘S" : "Ctrl+S"}</kbd>
+          </span>
+        </div>
       </form>
     </Form>
   );

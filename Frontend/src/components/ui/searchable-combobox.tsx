@@ -27,6 +27,8 @@ export type ComboboxOption = {
 };
 
 type SearchableComboboxProps = {
+  /** HTML id for the trigger element */
+  id?: string;
   /** Currently selected value (ID) */
   value: string;
   /** Display label for the current selection */
@@ -50,6 +52,7 @@ type SearchableComboboxProps = {
 };
 
 export function SearchableCombobox({
+  id,
   value,
   displayValue,
   onSelect,
@@ -115,11 +118,15 @@ export function SearchableCombobox({
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setSelectedIndex((prev) => (prev > 0 ? prev - 1 : options.length - 1));
-    } else if (e.key === "Enter" && selectedIndex >= 0 && selectedIndex < options.length) {
+    } else if (e.key === "Enter") {
       e.preventDefault();
-      const selected = options[selectedIndex];
-      onSelect(selected.value, selected.label, selected.extra);
-      setOpen(false);
+      e.stopPropagation();
+      const idx = selectedIndex >= 0 ? selectedIndex : 0;
+      if (idx >= 0 && idx < options.length) {
+        const selected = options[idx];
+        onSelect(selected.value, selected.label, selected.extra);
+        setOpen(false);
+      }
     }
   };
 
@@ -127,6 +134,7 @@ export function SearchableCombobox({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
+          id={id}
           variant="outline"
           role="combobox"
           aria-expanded={open}
