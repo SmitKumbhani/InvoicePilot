@@ -59,17 +59,23 @@ export function InvoiceDetails({
       <Card id="invoice-details">
         <CardHeader className="flex-row items-start justify-between">
             <div>
-                <CardTitle>{invoice.invoiceNumber}</CardTitle>
-                <CardDescription>
-                    Billed to: {invoice.customer.name} ({invoice.customer.phone})
-                </CardDescription>
+                <CardTitle className="flex flex-wrap items-baseline gap-2">
+                    <span>{invoice.invoiceNumber}</span>
+                    <span>-</span>
+                    <span>{invoice.customer.name}</span>
+                </CardTitle>
+                {invoice.customer?.phone && (
+                    <CardDescription className="mt-1">
+                        {invoice.customer.phone}
+                    </CardDescription>
+                )}
             </div>
             <div className="text-right space-y-1">
                 <Badge variant={"outline"} className={cn("text-base border-transparent", statusVariant[invoice.status])}>
                     {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1).replace("-", " ")}
                 </Badge>
                 <p className="text-sm text-muted-foreground">
-                  Issued: {invoice.issueDate ? format(new Date(new Date(invoice.issueDate).toUTCString()), "MMM d, yyyy") : ""}
+                  Issued: {invoice.issueDate ? format(new Date(new Date(invoice.issueDate).toUTCString()), "dd/MM/yyyy") : ""}
                 </p>
             </div>
         </CardHeader>

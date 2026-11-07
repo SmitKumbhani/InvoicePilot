@@ -471,18 +471,30 @@ export function InvoiceForm({ invoice, initialGroups = [], onItemFocus, onCustom
             </span>
           </div>
 
+          {/* Column Headers on Desktop */}
+          <div className="hidden md:grid md:grid-cols-[1.75rem_minmax(110px,1.2fr)_minmax(220px,3fr)_4.75rem_6.5rem_5.5rem_2.5rem] gap-2 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            <span className="text-center">#</span>
+            <span>Group</span>
+            <span>Item Name</span>
+            <span className="text-center">Qty</span>
+            <span>Price</span>
+            <span className="text-right">Total</span>
+            <span />
+          </div>
+
           {fields.map((field, index) => (
             <div
               key={field.id}
-              className="grid grid-cols-12 gap-2 items-start p-3 border rounded-lg"
+              className="grid grid-cols-1 md:grid-cols-[1.75rem_minmax(110px,1.2fr)_minmax(220px,3fr)_4.75rem_6.5rem_5.5rem_2.5rem] gap-2 items-center p-2.5 border rounded-lg hover:border-muted-foreground/30 transition-colors"
             >
-              <Controller
-                control={form.control}
-                name={`lineItems.${index}.group_name`}
-                render={({ field: controllerField }) => (
-                  <div className="col-span-3 flex items-center gap-2 pt-1">
-                    <span className="text-sm font-medium text-muted-foreground w-4 shrink-0 text-right">{index + 1}.</span>
-                    <FormItem className="flex-1">
+              {/* Row index + Group */}
+              <div className="flex items-center gap-1.5 md:contents">
+                <span className="text-sm font-medium text-muted-foreground w-7 shrink-0 text-center">{index + 1}.</span>
+                <Controller
+                  control={form.control}
+                  name={`lineItems.${index}.group_name`}
+                  render={({ field: controllerField }) => (
+                    <FormItem className="flex-1 m-0">
                       <SearchableCombobox
                         id={`line-item-${index}-group-trigger`}
                         value={controllerField.value || ""}
@@ -496,14 +508,16 @@ export function InvoiceForm({ invoice, initialGroups = [], onItemFocus, onCustom
                         emptyMessage="No groups found."
                       />
                     </FormItem>
-                  </div>
-                )}
-              />
+                  )}
+                />
+              </div>
+
+              {/* Item Name (Significantly Increased Width) */}
               <Controller
                 control={form.control}
                 name={`lineItems.${index}.itemId`}
                 render={({ field: controllerField }) => (
-                  <FormItem className="col-span-3">
+                  <FormItem className="m-0">
                     <SearchableCombobox
                       id={`line-item-${index}-item-trigger`}
                       value={controllerField.value}
@@ -542,31 +556,37 @@ export function InvoiceForm({ invoice, initialGroups = [], onItemFocus, onCustom
                   </FormItem>
                 )}
               />
+
+              {/* Quantity (Slightly Increased Width: 4.75rem / 76px) */}
               <FormField
                 control={form.control}
                 name={`lineItems.${index}.quantity`}
                 render={({ field }) => (
-                  <FormItem className="col-span-1">
+                  <FormItem className="m-0">
                     <FormControl>
                       <Input
                         id={`line-item-${index}-quantity`}
                         type="number"
                         placeholder="Qty"
+                        className="text-center px-1"
                         {...field}
                       />
                     </FormControl>
                   </FormItem>
                 )}
               />
+
+              {/* Unit Price */}
               <FormField
                 control={form.control}
                 name={`lineItems.${index}.unitPrice`}
                 render={({ field }) => (
-                  <FormItem className="col-span-2">
+                  <FormItem className="m-0">
                     <FormControl>
                       <Input
                         id={`line-item-${index}-price`}
                         type="number"
+                        step="0.01"
                         placeholder="Price"
                         {...field}
                       />
@@ -574,16 +594,20 @@ export function InvoiceForm({ invoice, initialGroups = [], onItemFocus, onCustom
                   </FormItem>
                 )}
               />
-              <div className="col-span-2 flex items-center pt-2 px-2 text-sm text-muted-foreground font-medium">
+
+              {/* Row Total */}
+              <div className="flex items-center justify-end px-1 text-sm font-semibold truncate">
                 {formatCurrency((watchedLineItems[index]?.quantity || 0) * (watchedLineItems[index]?.unitPrice || 0))}
               </div>
-              <div className="col-span-1 flex items-center justify-end pt-1">
+
+              {/* Delete Button */}
+              <div className="flex items-center justify-center">
                  <Button
                   type="button"
                   variant="ghost"
                   size="icon"
                   onClick={() => handleRemoveItem(index)}
-                  className="text-destructive hover:text-destructive"
+                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>

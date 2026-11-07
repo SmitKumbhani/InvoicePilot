@@ -68,41 +68,41 @@ export function PriceHistoryPanel({ itemId, customerId }: { itemId: string | nul
 
   return (
     <Card className="sticky top-20">
-      <CardHeader>
-        <CardTitle className="font-headline flex items-center gap-2">
-          <History className="w-6 h-6" />
+      <CardHeader className="p-4 pb-2">
+        <CardTitle className="font-headline text-base flex items-center gap-2">
+          <History className="w-4 h-4 text-primary" />
           Price History
         </CardTitle>
-        <CardDescription>
-          Purchase price history for the selected item for this customer.
+        <CardDescription className="text-xs">
+          Recent purchase history for selected item.
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-4 pt-2">
         {loading && <PriceHistorySkeleton />}
         {!loading && (!itemId || !customerId) && (
-          <div className="text-center text-muted-foreground py-8">
-            Select a customer and an item to see its price history.
+          <div className="text-center text-xs text-muted-foreground py-6">
+            Select customer and item to see price history.
           </div>
         )}
         {!loading && itemId && customerId && history.length === 0 && (
-          <div className="text-center text-muted-foreground py-8">
-            No price history available for this item for this customer.
+          <div className="text-center text-xs text-muted-foreground py-6">
+            No price history found.
           </div>
         )}
         {!loading && itemId && customerId && history.length > 0 && (
-          <div className="space-y-4">
-            <h4 className="font-semibold">{itemName}</h4>
+          <div className="space-y-3">
+            <h4 className="font-semibold text-sm truncate" title={itemName}>{itemName}</h4>
             <Table>
                 <TableHeader>
                     <TableRow>
-                        <SortableTableHead {...sortableHeadProps("issueDate")}>Purchase Date</SortableTableHead>
-                        <SortableTableHead {...sortableHeadProps("unitPrice")} className="text-right" align="right">Price</SortableTableHead>
+                        <SortableTableHead {...sortableHeadProps("issueDate")} className="text-xs py-2">Date</SortableTableHead>
+                        <SortableTableHead {...sortableHeadProps("unitPrice")} className="text-right text-xs py-2" align="right">Price</SortableTableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
                     {sortedHistory.map((entry, index) => (
                         <TableRow key={index}>
-                            <TableCell>{format(new Date(new Date(entry.issueDate).toUTCString()), "MMM d, yyyy")}</TableCell>
+                            <TableCell>{format(new Date(new Date(entry.issueDate).toUTCString()), "dd/MM/yyyy")}</TableCell>
                             <TableCell className="text-right">{formatCurrency(entry.unitPrice)}</TableCell>
                         </TableRow>
                     ))}

@@ -17,8 +17,8 @@ export function InvoiceCreator({ invoice, initialGroups = [] }: InvoiceCreatorPr
   const isMobile = useIsMobile();
 
   return (
-    <div className="grid lg:grid-cols-3 gap-8">
-      <div className="lg:col-span-2">
+    <div className="grid lg:grid-cols-12 gap-6">
+      <div className="lg:col-span-9">
         <Card>
             <CardHeader>
                 <CardTitle className="font-headline">{invoice ? `Edit Invoice ${invoice.invoiceNumber}` : "Create Invoice"}</CardTitle>
@@ -35,7 +35,7 @@ export function InvoiceCreator({ invoice, initialGroups = [] }: InvoiceCreatorPr
         </Card>
       </div>
       {!isMobile && (
-        <div className="lg:col-span-1">
+        <div className="lg:col-span-3">
             <PriceHistoryPanel itemId={selectedItemId} customerId={selectedCustomerId}/>
         </div>
       )}
